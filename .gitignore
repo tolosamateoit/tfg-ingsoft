@@ -1,0 +1,19 @@
+# Entornos y dependencias locales
+.venv/
+node_modules/
+.tools/
+.env
+.env.*
+!.env.example
+backend/certs/
+
+# Archivos generados
+__pycache__/
+*.py[cod]
+dist/
+*.tsbuildinfo
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
