@@ -1,0 +1,78 @@
+"""Pertenencia verificada en las consultas; guardado atómico de la receta."""
+
+from fastapi import HTTPException
+from sqlalchemy import delete, select, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.db.models import Insumo, Producto, RecetaDetalle
+from app.menu.schemas import ProductInput, RecipeInput, RecipeItemOutput, RecipeOutput
+
+
+def product_in_restaurant(db: Session, restaurant_id: int, product_id: int, *, lock=False) -> Producto:
+    query = select(Producto).where(Producto.id_producto == product_id, Producto.id_restaurante == restaurant_id)
+    if lock:
+        query = query.with_for_update()
+    product = db.scalar(query)
+    if product is None:
+        raise HTTPException(404, "Producto no disponible en este restaurante.")
+    return product
+
+
+def create_product(db: Session, restaurant_id: int, data: ProductInput) -> Producto:
+    product = Producto(id_restaurante=restaurant_id, **data.model_dump())
+    db.add(product)
+    db.commit()
+    return product
+
+
+def update_product(db: Session, restaurant_id: int, product_id: int, data: ProductInput) -> Producto:
+    product = product_in_restaurant(db, restaurant_id, product_id, lock=True)
+    for name, value in data.model_dump().items():
+        setattr(product, name, value)
+    db.commit()
+    return product
+
+
+def recipe_output(db: Session, restaurant_id: int, product_id: int) -> RecipeOutput:
+    rows = db.execute(
+        select(RecetaDetalle.id_insumo, Insumo.nombre, RecetaDetalle.cantidad, RecetaDetalle.unidad)
+        .join(Insumo, Insumo.id_insumo == RecetaDetalle.id_insumo)
+        .join(Producto, Producto.id_producto == RecetaDetalle.id_producto)
+        .where(RecetaDetalle.id_producto == product_id, Producto.id_restaurante == restaurant_id,
+               Insumo.id_restaurante == restaurant_id)
+        .order_by(Insumo.nombre, Insumo.id_insumo)
+    ).mappings()
+    return RecipeOutput(id_producto=product_id, detalles=[RecipeItemOutput(**row) for row in rows])
+
+
+def lock_recipe_relations(db: Session):
+    # Mismo orden que los triggers 0001: lock de relaciones ANTES de locks de filas.
+    # Evita interbloqueos con cambios concurrentes de pertenencia de producto/insumo.
+    db.execute(text("SELECT pg_advisory_xact_lock(1647042, 1)"))
+
+
+def save_recipe(db: Session, restaurant_id: int, product_id: int, data: RecipeInput) -> RecipeOutput:
+    lock_recipe_relations(db)
+    product_in_restaurant(db, restaurant_id, product_id, lock=True)
+    ingredient_ids = [item.id_insumo for item in data.detalles]
+    ingredients = db.scalars(
+        select(Insumo).where(Insumo.id_restaurante == restaurant_id, Insumo.id_insumo.in_(ingredient_ids))
+        .order_by(Insumo.id_insumo).with_for_update(read=True)
+    ).all() if ingredient_ids else []
+    by_id = {ingredient.id_insumo: ingredient for ingredient in ingredients}
+    if len(by_id) != len(ingredient_ids):
+        raise HTTPException(422, "Todos los insumos deben pertenecer al restaurante autorizado.")
+    if any(item.unidad != by_id[item.id_insumo].unidad for item in data.detalles):
+        # No hay conversiones de unidades definidas en el prototipo.
+        raise HTTPException(422, "Usá la unidad registrada de cada insumo.")
+    try:
+        db.execute(delete(RecetaDetalle).where(RecetaDetalle.id_producto == product_id))
+        db.add_all([RecetaDetalle(id_producto=product_id, **item.model_dump()) for item in data.detalles])
+        db.flush()
+        result = recipe_output(db, restaurant_id, product_id)
+        db.commit()
+        return result
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "No se pudo guardar la receta. Actualizá los datos y volvé a intentar.") from None

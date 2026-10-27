@@ -23,7 +23,7 @@ def render_migration(*, downgrade=False):
         if downgrade:
             command.downgrade(config, "0001_der_inicial:base", sql=True)
         else:
-            command.upgrade(config, "head", sql=True)
+            command.upgrade(config, "0001_der_inicial", sql=True)
     return output.getvalue()
 
 

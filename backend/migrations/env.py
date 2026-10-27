@@ -5,13 +5,16 @@ from alembic.util import CommandError
 
 from app.db.base import Base
 from app.db import models  # noqa: F401 - registrar las entidades del DER
+from app.auth.models import AuthBase
+
+target_metadata = [Base.metadata, AuthBase.metadata]
 
 
 def run_migrations_offline():
     # No leer el .env ni construir un engine para generar SQL de revisión.
     context.configure(
         dialect_name="postgresql",
-        target_metadata=Base.metadata,
+        target_metadata=target_metadata,
         version_table_schema="public",
         literal_binds=True,
         compare_type=True,
@@ -27,7 +30,7 @@ def run_migrations_online():
             "antes de usar -x approved=true. No se abrió ninguna conexión."
         )
     def migrate(connection):
-        context.configure(connection=connection, target_metadata=Base.metadata, compare_type=True, version_table_schema="public")
+        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True, version_table_schema="public")
         with context.begin_transaction():
             context.run_migrations()
 

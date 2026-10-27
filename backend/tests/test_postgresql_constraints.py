@@ -86,6 +86,7 @@ class PostgreSQLConstraintTests(unittest.TestCase):
         with cls.engine.connect() as connection:
             cls.config.attributes["connection"] = connection
             command.downgrade(cls.config, "base")
+            connection.execute(text("DROP TABLE public.alembic_version"))
             connection.commit()
         cls.engine.dispose()
 

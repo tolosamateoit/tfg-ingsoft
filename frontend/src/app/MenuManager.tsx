@@ -1,0 +1,202 @@
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  MenuError, createProduct, formatMoney, getRecipe, listIngredients, listProducts,
+  saveRecipe, updateProduct, type Ingredient, type Product, type ProductInput, type RecipeItem,
+} from '../services/menu';
+
+type Props = { restaurant: number; onSessionExpired: () => void };
+type Editor = { kind: 'product'; product?: Product } | { kind: 'recipe'; product: Product };
+
+function errorMessage(error: unknown) {
+  return error instanceof MenuError ? error.message : 'No se pudo confirmar la operación. Comprobá la conexión y volvé a cargar los datos.';
+}
+
+function ProductForm({ product, busy, onSave, onCancel }: {
+  product?: Product; busy: boolean; onSave: (data: ProductInput) => void; onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<ProductInput>({ nombre: product?.nombre ?? '', precio: product?.precio ?? '',
+    costo_unitario: product?.costo_unitario ?? '', activo: product?.activo ?? true });
+  function submit(event: FormEvent) { event.preventDefault(); onSave(draft); }
+  return (
+    <form className="menu-form" onSubmit={submit} aria-label={product ? 'Editar producto' : 'Nuevo producto'}>
+      <h3>{product ? `Editar ${product.nombre}` : 'Nuevo producto'}</h3>
+      <fieldset disabled={busy}>
+        <label htmlFor="product-name">Nombre</label>
+        <input id="product-name" required maxLength={150} value={draft.nombre}
+          onChange={(event) => setDraft({ ...draft, nombre: event.target.value })} />
+        <div className="form-columns">
+          <div><label htmlFor="product-price">Precio de venta ($)</label>
+            <input id="product-price" type="number" min="0" step="0.01" required value={draft.precio}
+              onChange={(event) => setDraft({ ...draft, precio: event.target.value })} /></div>
+          <div><label htmlFor="product-cost">Costo unitario ($)</label>
+            <input id="product-cost" type="number" min="0" step="0.01" required value={draft.costo_unitario}
+              onChange={(event) => setDraft({ ...draft, costo_unitario: event.target.value })} /></div>
+        </div>
+        <label className="checkbox-label"><input type="checkbox" checked={draft.activo}
+          onChange={(event) => setDraft({ ...draft, activo: event.target.checked })} />Activo en el menú</label>
+        <div className="menu-actions">
+          <button type="submit">{busy ? 'Guardando…' : 'Guardar producto'}</button>
+          <button type="button" onClick={onCancel}>Cancelar</button>
+        </div>
+      </fieldset>
+    </form>
+  );
+}
+
+function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExpired }: {
+  restaurant: number; product: Product; ingredients: Ingredient[]; onCancel: () => void; onSessionExpired: () => void;
+}) {
+  const [rows, setRows] = useState<(RecipeItem & { key: number })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const nextKey = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setLoaded(false); setError('');
+    void getRecipe(restaurant, product.id_producto, controller.signal).then((recipe) => {
+      if (!controller.signal.aborted) { setRows(recipe.detalles.map((item) => ({ ...item, key: nextKey.current++ }))); setLoaded(true); }
+    }).catch((failure: unknown) => {
+      if (!controller.signal.aborted) {
+        setError(errorMessage(failure));
+        if (failure instanceof MenuError && failure.status === 401) onSessionExpired();
+      }
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [restaurant, product.id_producto, onSessionExpired, retry]);
+
+  function addIngredient() {
+    const available = ingredients.find((item) => !rows.some((row) => row.id_insumo === item.id_insumo));
+    if (available) setRows([...rows, { key: nextKey.current++, id_insumo: available.id_insumo, cantidad: '1', unidad: available.unidad }]);
+    setNotice('');
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const recipe = await saveRecipe(restaurant, product.id_producto, rows.map(({ id_insumo, cantidad, unidad }) => ({ id_insumo, cantidad, unidad })));
+      setRows(recipe.detalles.map((item) => ({ ...item, key: nextKey.current++ })));
+      setNotice('Receta guardada.');
+    } catch (failure) {
+      setError(errorMessage(failure));
+      if (failure instanceof MenuError && failure.status === 401) onSessionExpired();
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <form className="menu-form" onSubmit={(event) => void submit(event)} aria-label="Editar receta" aria-busy={loading || busy}>
+      <h3>Receta de {product.nombre}</h3>
+      <p>Indicá las cantidades necesarias para una unidad del producto, en la unidad registrada de cada insumo.</p>
+      {loading ? <p role="status">Cargando receta…</p> : loaded && (
+        <fieldset disabled={busy}>
+          {ingredients.length === 0 && <p>No hay insumos precargados para este restaurante.</p>}
+          {rows.length === 0 && <p>Esta receta no contiene insumos.</p>}
+          {rows.map((row, index) => (
+            <div className="recipe-row" key={row.key}>
+              <div><label htmlFor={`ingredient-${row.key}`}>Insumo {index + 1}</label>
+                <select id={`ingredient-${row.key}`} value={row.id_insumo} onChange={(event) => {
+                  const ingredient = ingredients.find((item) => item.id_insumo === Number(event.target.value));
+                  if (ingredient) setRows(rows.map((item) => item.key === row.key
+                    ? { ...item, id_insumo: ingredient.id_insumo, unidad: ingredient.unidad } : item));
+                  setNotice('');
+                }}>
+                  {ingredients.filter((item) => item.id_insumo === row.id_insumo || !rows.some((other) => other.id_insumo === item.id_insumo))
+                    .map((item) => <option key={item.id_insumo} value={item.id_insumo}>{item.nombre}</option>)}
+                </select></div>
+              <div><label htmlFor={`quantity-${row.key}`}>Cantidad {index + 1}</label>
+                <input id={`quantity-${row.key}`} type="number" min="0.000001" step="0.000001" required value={row.cantidad}
+                  onChange={(event) => { setRows(rows.map((item) => item.key === row.key ? { ...item, cantidad: event.target.value } : item)); setNotice(''); }} /></div>
+              <div><label htmlFor={`unit-${row.key}`}>Unidad {index + 1}</label><input id={`unit-${row.key}`} readOnly value={row.unidad} /></div>
+              <button type="button" aria-label={`Quitar insumo ${index + 1}`} onClick={() => { setRows(rows.filter((item) => item.key !== row.key)); setNotice(''); }}>Quitar</button>
+            </div>
+          ))}
+          <button type="button" disabled={rows.length >= ingredients.length || rows.length >= 100} onClick={addIngredient}>Agregar insumo</button>
+          <div className="menu-actions">
+            <button type="submit">{busy ? 'Guardando…' : 'Guardar receta'}</button>
+            <button type="button" onClick={onCancel}>Cerrar receta</button>
+          </div>
+        </fieldset>
+      )}
+      {!loading && error && <p className="auth-error" role="alert">{error}</p>}
+      {notice && <p className="menu-notice" role="status">{notice}</p>}
+      {!loading && !loaded && <button type="button" onClick={() => setRetry(retry + 1)}>Volver a cargar receta</button>}
+      {(loading || !loaded) && <button type="button" onClick={onCancel}>Cerrar receta</button>}
+    </form>
+  );
+}
+
+export default function MenuManager({ restaurant, onSessionExpired }: Props) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setError('');
+    void Promise.all([listProducts(restaurant, controller.signal), listIngredients(restaurant, controller.signal)])
+      .then(([items, supplies]) => { if (!controller.signal.aborted) { setProducts(items); setIngredients(supplies); } })
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(errorMessage(failure));
+          if (failure instanceof MenuError && failure.status === 401) onSessionExpired();
+        }
+      }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [restaurant, reload, onSessionExpired]);
+
+  async function saveProduct(data: ProductInput) {
+    if (editor?.kind !== 'product') return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const product = editor.product ? await updateProduct(restaurant, editor.product.id_producto, data) : await createProduct(restaurant, data);
+      setProducts((previous) => [...previous.filter((item) => item.id_producto !== product.id_producto), product]
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es') || a.id_producto - b.id_producto));
+      setEditor(null); setNotice('Producto guardado.');
+    } catch (failure) {
+      setError(errorMessage(failure));
+      if (failure instanceof MenuError && failure.status === 401) onSessionExpired();
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <section className="menu-manager" aria-labelledby="menu-title">
+      <div className="menu-heading"><div><p className="eyebrow">HU-02 · Restaurante {restaurant}</p><h2 id="menu-title">Menú, productos y recetas</h2></div>
+        <div className="menu-actions">
+          <button type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setEditor({ kind: 'product' }); }}>Nuevo producto</button>
+          <button type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setReload(reload + 1); }}>Actualizar catálogo</button>
+        </div>
+      </div>
+      {loading && <p role="status">Cargando catálogo…</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      {notice && <p className="menu-notice" role="status">{notice}</p>}
+      {!loading && !error && products.length === 0 && <p>Todavía no hay productos. Creá el primero para comenzar.</p>}
+      <div className="catalog-grid">
+        {products.map((product) => <article className="product-card" key={product.id_producto}>
+          <div className="product-title"><h3>{product.nombre}</h3><span className={`product-state ${product.activo ? 'product-state--active' : ''}`}>{product.activo ? 'Activo' : 'Inactivo'}</span></div>
+          <dl><dt>Precio de venta</dt><dd>{formatMoney(product.precio)}</dd><dt>Costo unitario</dt><dd>{formatMoney(product.costo_unitario)}</dd></dl>
+          <div className="menu-actions">
+            <button type="button" disabled={editor !== null || loading} aria-label={`Editar ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product', product }); }}>Editar</button>
+            <button type="button" disabled={editor !== null || loading} aria-label={`Receta de ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'recipe', product }); }}>Receta</button>
+          </div>
+        </article>)}
+      </div>
+      {editor && <section className="menu-editor">
+        {editor.kind === 'product'
+          ? <ProductForm key={editor.product?.id_producto ?? 'new'} product={editor.product} busy={busy}
+            onSave={(data) => void saveProduct(data)} onCancel={() => { setEditor(null); setError(''); }} />
+          : <RecipeEditor key={editor.product.id_producto} restaurant={restaurant} product={editor.product} ingredients={ingredients}
+            onCancel={() => setEditor(null)} onSessionExpired={onSessionExpired} />}
+      </section>}
+    </section>
+  );
+}
