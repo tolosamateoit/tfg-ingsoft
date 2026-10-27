@@ -1,14 +1,73 @@
 """Consultas acotadas por rol, titularidad y restaurante en PostgreSQL."""
 
+from decimal import Decimal, localcontext
+
 from fastapi import HTTPException
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Cliente, DetallePedido, Pedido, Producto, Repartidor, Restaurante, Usuario
+from app.db.models import Cliente, DetallePedido, HistorialPedido, Pedido, Producto, Repartidor, Restaurante, Usuario
 from app.orders.schemas import (
     CustomerMenuOutput, MenuItemOutput, OrderItemOutput, OrderOutput, OrderPage,
-    OrderSummary, RestaurantOutput,
+    OrderSummary, RestaurantOutput, OrderInput,
 )
+
+
+def lock_order_relations(db: Session):
+    # El trigger del DER toma este mismo lock antes de bloquear filas.
+    db.execute(text("SELECT pg_advisory_xact_lock(1647042, 1)"))
+
+
+def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInput) -> OrderOutput:
+    lock_order_relations(db)
+    restaurant = db.scalar(select(Restaurante).where(Restaurante.id_restaurante == restaurant_id)
+                           .with_for_update(read=True))
+    if restaurant is None or not restaurant.abierto:
+        raise HTTPException(409, "El restaurante debe estar abierto para confirmar el pedido.")
+    courier = db.execute(select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
+                         .where(Usuario.id_restaurante == restaurant_id, Usuario.activo.is_(True),
+                                Usuario.rol == "repartidor", Repartidor.estado_disponibilidad == "Disponible")
+                         .order_by(Repartidor.id_repartidor).limit(1).with_for_update(read=True)).first()
+    if courier is None:
+        raise HTTPException(409, "No hay repartidores disponibles en este restaurante.")
+    client = db.scalar(select(Cliente).join(Usuario, Usuario.id_usuario == Cliente.id_usuario)
+                       .where(func.lower(Usuario.correo) == data.correo_cliente.lower(),
+                              Usuario.rol == "cliente", Usuario.activo.is_(True)).with_for_update(read=True))
+    if client is None:
+        raise HTTPException(422, "Ingresá el correo de una cuenta de cliente activa y precargada.")
+    ids = [item.id_producto for item in data.detalles]
+    products = db.scalars(select(Producto).where(Producto.id_restaurante == restaurant_id,
+                                               Producto.activo.is_(True), Producto.id_producto.in_(ids))
+                          .order_by(Producto.id_producto).with_for_update(read=True)).all()
+    by_id = {product.id_producto: product for product in products}
+    if len(by_id) != len(ids):
+        raise HTTPException(422, "Todos los productos deben estar activos y pertenecer al restaurante.")
+    with localcontext() as context:
+        context.prec = 40
+        amount = sum((by_id[item.id_producto].precio * item.cantidad for item in data.detalles), Decimal(0))
+        cost = sum((by_id[item.id_producto].costo_unitario * item.cantidad for item in data.detalles), Decimal(0))
+    if max(amount, cost) > Decimal("9999999999999999.99"):
+        raise HTTPException(422, "El importe o costo del pedido supera el máximo permitido.")
+    order = Pedido(id_restaurante=restaurant_id, id_cliente=client.id_cliente, estado="Nuevo",
+                   direccion_entrega=data.direccion_entrega, referencia_local=data.referencia_local or None,
+                   zona_entrega=data.zona_entrega or None, medio_pago=data.medio_pago, estado_pago="pendiente",
+                   distancia_km=data.distancia_km, importe_total=amount, costo_total=cost)
+    try:
+        db.add(order)
+        db.flush()
+        db.add_all([DetallePedido(id_pedido=order.id_pedido, id_producto=item.id_producto,
+                                 cantidad=item.cantidad, precio_unitario=by_id[item.id_producto].precio)
+                    for item in data.detalles])
+        db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario,
+                              tipo_evento="registro", estado="Nuevo", detalle="Registro del pedido."))
+        db.flush()
+        result = read_order(db, user, order.id_pedido)
+        db.commit()
+        return result
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "No se pudo guardar el pedido. Actualizá los datos y volvé a intentar.") from None
 
 
 def courier_available(restaurant_id):

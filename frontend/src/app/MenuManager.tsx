@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Dialog, FoodPhoto, Icon } from './ui';
 import {
   MenuError, createProduct, formatMoney, getRecipe, listIngredients, listProducts,
   saveRecipe, updateProduct, type Ingredient, type Product, type ProductInput, type RecipeItem,
@@ -43,8 +44,8 @@ function ProductForm({ product, busy, onSave, onCancel }: {
   );
 }
 
-function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExpired }: {
-  restaurant: number; product: Product; ingredients: Ingredient[]; onCancel: () => void; onSessionExpired: () => void;
+function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExpired, onBusyChange }: {
+  restaurant: number; product: Product; ingredients: Ingredient[]; onCancel: () => void; onSessionExpired: () => void; onBusyChange: (busy: boolean) => void;
 }) {
   const [rows, setRows] = useState<(RecipeItem & { key: number })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +55,7 @@ function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExp
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const nextKey = useRef(0);
+  useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,7 +96,7 @@ function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExp
       <p>Indicá las cantidades necesarias para una unidad del producto, en la unidad registrada de cada insumo.</p>
       {loading ? <p role="status">Cargando receta…</p> : loaded && (
         <fieldset disabled={busy}>
-          {ingredients.length === 0 && <p>No hay insumos precargados para este restaurante.</p>}
+          {ingredients.length === 0 && <p>Todavía no hay insumos registrados para este restaurante.</p>}
           {rows.length === 0 && <p>Esta receta no contiene insumos.</p>}
           {rows.map((row, index) => (
             <div className="recipe-row" key={row.key}>
@@ -170,18 +172,19 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
 
   return (
     <section className="menu-manager" aria-labelledby="menu-title">
-      <div className="menu-heading"><div><p className="eyebrow">HU-02 · Restaurante {restaurant}</p><h2 id="menu-title">Menú, productos y recetas</h2></div>
+      <div className="menu-heading"><div><h2 id="menu-title">Tu carta</h2><p>Productos que salen de tu cocina. Imágenes ilustrativas.</p></div>
         <div className="menu-actions">
-          <button type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setEditor({ kind: 'product' }); }}>Nuevo producto</button>
+          <button className="primary-button" type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product' }); }}><Icon name="plus" size={17}/>Nuevo producto</button>
           <button type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setReload(reload + 1); }}>Actualizar catálogo</button>
         </div>
       </div>
       {loading && <p role="status">Cargando catálogo…</p>}
-      {error && <p className="auth-error" role="alert">{error}</p>}
+      {error && !editor && <p className="auth-error" role="alert">{error}</p>}
       {notice && <p className="menu-notice" role="status">{notice}</p>}
       {!loading && !error && products.length === 0 && <p>Todavía no hay productos. Creá el primero para comenzar.</p>}
       <div className="catalog-grid">
-        {products.map((product) => <article className="product-card" key={product.id_producto}>
+        {products.map((product) => <article className="product-card catalog-product" key={product.id_producto}>
+          <FoodPhoto name={product.nombre}/>
           <div className="product-title"><h3>{product.nombre}</h3><span className={`product-state ${product.activo ? 'product-state--active' : ''}`}>{product.activo ? 'Activo' : 'Inactivo'}</span></div>
           <dl><dt>Precio de venta</dt><dd>{formatMoney(product.precio)}</dd><dt>Costo unitario</dt><dd>{formatMoney(product.costo_unitario)}</dd></dl>
           <div className="menu-actions">
@@ -190,13 +193,14 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
           </div>
         </article>)}
       </div>
-      {editor && <section className="menu-editor">
+      {editor && <Dialog title={editor.kind === 'product' ? (editor.product ? 'Editar producto' : 'Nuevo producto') : `Receta de ${editor.product.nombre}`} busy={busy} onClose={() => { setEditor(null); setError(''); }}>
+        {error && <p className="auth-error" role="alert">{error}</p>}
         {editor.kind === 'product'
           ? <ProductForm key={editor.product?.id_producto ?? 'new'} product={editor.product} busy={busy}
             onSave={(data) => void saveProduct(data)} onCancel={() => { setEditor(null); setError(''); }} />
           : <RecipeEditor key={editor.product.id_producto} restaurant={restaurant} product={editor.product} ingredients={ingredients}
-            onCancel={() => setEditor(null)} onSessionExpired={onSessionExpired} />}
-      </section>}
+            onCancel={() => setEditor(null)} onSessionExpired={onSessionExpired} onBusyChange={setBusy} />}
+      </Dialog>}
     </section>
   );
 }

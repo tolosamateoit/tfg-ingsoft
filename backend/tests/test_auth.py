@@ -310,7 +310,25 @@ class AuthApiTests(unittest.TestCase):
                                      "/api/restaurantes/{id_restaurante}/productos",
                                      "/api/restaurantes/{id_restaurante}/productos/{id_producto}",
                                      "/api/restaurantes/{id_restaurante}/insumos",
-                                     "/api/restaurantes/{id_restaurante}/productos/{id_producto}/receta"})
+                                     "/api/restaurantes/{id_restaurante}/productos/{id_producto}/receta",
+                                     "/api/restaurantes", "/api/restaurantes/{id_restaurante}/menu",
+                                     "/api/restaurantes/{id_restaurante}/pedidos",
+                                     "/api/pedidos", "/api/pedidos/{id_pedido}",
+                                     "/api/restaurantes/{id_restaurante}/stock",
+                                     "/api/restaurantes/{id_restaurante}/pedidos/{id_pedido}/preparacion",
+                                     "/api/restaurantes/{id_restaurante}/repartidores",
+                                     "/api/restaurantes/{id_restaurante}/repartidores/{id_repartidor}",
+                                     "/api/repartidores/me",
+                                     "/api/restaurantes/{id_restaurante}/prioridades",
+                                     "/api/restaurantes/{id_restaurante}/entregas/asignar",
+                                     "/api/restaurantes/{id_restaurante}/pedidos/{id_pedido}/distancia",
+                                     "/api/pedidos/{id_pedido}/seguimiento",
+                                     "/api/entregas", "/api/entregas/{id_entrega}/estado",
+                                     "/api/restaurantes/{id_restaurante}/predicciones",
+                                     "/api/restaurantes/{id_restaurante}/indicadores",
+                                     "/api/restaurantes/{id_restaurante}/alertas",
+                                     "/api/restaurantes/{id_restaurante}/dashboard",
+                                     "/api/admin/diagnostico-cuenta"})
 
 
 class DatabaseFailureTests(unittest.TestCase):

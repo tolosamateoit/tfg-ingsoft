@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { AuthError, getSession, login, logout, type User } from '../services/auth';
+﻿import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { AuthError, getSession, localAccountLogin, login, logout, type User } from '../services/auth';
 import MenuManager from './MenuManager';
-
-const roles: Record<string, string> = {
-  cliente: 'Cliente', personal: 'Personal del restaurante', propietario: 'Propietario',
-  repartidor: 'Repartidor', administrador_plataforma: 'Administrador de la plataforma',
-};
+import Orders from './Orders';
+import Couriers from './Couriers';
+import Logistics from './Logistics';
+import Analytics from './Analytics';
+import Dashboard from './Dashboard';
+import AccountSupport from './AccountSupport';
+import { Icon, FoodPhoto } from './ui';
+import { newOrder, pagesFor, roleLabels } from './navigation';
 
 export default function AuthPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -13,88 +16,100 @@ export default function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const canManageMenu = user !== null && user.id_restaurante !== null && ['personal', 'propietario'].includes(user.rol);
+  const [path, setPath] = useState(window.location.hash.replace(/^#\//, ''));
+  const [mobileMenu, setMobileMenu] = useState(false);
   const sessionExpired = useCallback(() => { setUser(null); setError('Tu sesión venció. Volvé a ingresar.'); }, []);
-
+  const staff = user !== null && user.id_restaurante !== null && ['propietario', 'personal'].includes(user.rol);
+  const pages = user ? pagesFor(user) : [];
+  const current = pages.find((page) => page.path === path) ?? (staff && path === newOrder.path ? newOrder : pages[0]);
+  useEffect(() => {
+    const changed = () => { setPath(window.location.hash.replace(/^#\//, '')); setMobileMenu(false); window.scrollTo(0, 0); };
+    window.addEventListener('hashchange', changed);
+    return () => window.removeEventListener('hashchange', changed);
+  }, []);
+  useEffect(() => {
+    if (current && current.path !== path) { window.history.replaceState(null, '', `#/${current.path}`); setPath(current.path); }
+    document.title = current ? `${current.label} · Oliva` : 'Ingresar · Oliva';
+  }, [current?.path, path]);
   useEffect(() => {
     const controller = new AbortController();
-    void getSession(controller.signal).then((session) => {
-      if (!controller.signal.aborted) setUser(session);
-    }).catch(() => {
-      if (!controller.signal.aborted) setError('No se pudo comprobar la sesión. Podés volver a intentar iniciar sesión.');
-    }).finally(() => {
-      if (!controller.signal.aborted) setChecking(false);
-    });
+    void getSession(controller.signal).then((session) => { if (!controller.signal.aborted) setUser(session); })
+      .catch(() => { if (!controller.signal.aborted) setError('No se pudo comprobar tu sesión. Volvé a intentar.'); })
+      .finally(() => { if (!controller.signal.aborted) setChecking(false); });
     return () => controller.abort();
   }, []);
-
-  async function signIn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    try { setUser(await login(email, password)); }
-    catch (failure) {
-      setError(failure instanceof AuthError ? failure.message : 'No se pudo conectar con el servidor. Volvé a intentar.');
-    } finally {
-      setPassword('');
-      setBusy(false);
-    }
+  function enter(session: User) {
+    const home = pagesFor(session)[0].path;
+    window.history.replaceState(null, '', `#/${home}`);
+    setPath(home); setUser(session); setMobileMenu(false);
   }
-
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError('');
+    try { enter(await login(email, password)); }
+    catch (failure) { setError(failure instanceof AuthError ? failure.message : 'No se pudo conectar con el servidor.'); }
+    finally { setPassword(''); setShowPassword(false); setBusy(false); }
+  }
+  async function quickAccess(role: string) {
+    setBusy(true); setError('');
+    try { enter(await localAccountLogin(role)); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : 'No se pudo iniciar sesión.'); }
+    finally { setBusy(false); setPassword(''); }
+  }
   async function signOut() {
-    setBusy(true);
-    setError('');
-    try { await logout(); setUser(null); }
+    setBusy(true); setError('');
+    try { await logout(); setUser(null); setMobileMenu(false); }
     catch { setError('No se pudo cerrar la sesión. Volvé a intentar.'); }
     finally { setBusy(false); }
   }
-
-  return (
-    <div className="page">
-      <header className="page-header">
-        <span className="brand">Pedidos y delivery</span>
-        <span className="demo-label">Demo académica</span>
-      </header>
-      <main className={canManageMenu ? 'management-main' : 'auth-main'}>
-        <p className="eyebrow">Ingeniería en Software · HU-01</p>
-        <h1>{user ? 'Sesión iniciada' : 'Iniciar sesión'}</h1>
-        <p className="intro">Acceso para usuarios de prueba del prototipo.</p>
-        <section className="connection-card" aria-label="Autenticación" aria-busy={busy || checking}>
-          {checking ? <p role="status">Comprobando sesión…</p> : user ? (
-            <>
-              <h2>Hola, {user.nombre}</h2>
-              <dl className="session-details">
-                <dt>Correo</dt><dd>{user.correo}</dd>
-                <dt>Rol</dt><dd>{roles[user.rol] ?? user.rol}</dd>
-                <dt>Ámbito de acceso</dt><dd>{user.id_restaurante !== null
-                  ? `Restaurante ${user.id_restaurante}`
-                  : user.rol === 'cliente' ? 'Tus propios pedidos en los restaurantes'
-                    : 'Cuenta de plataforma sin acceso operativo global'}</dd>
-              </dl>
-              <p>{canManageMenu ? 'Gestioná los productos y las recetas de tu restaurante.' : 'Las funciones de tu rol se incorporarán en las próximas etapas.'}</p>
-              <button type="button" disabled={busy} onClick={() => void signOut()}>
-                {busy ? 'Cerrando sesión…' : 'Cerrar sesión'}
-              </button>
-            </>
-          ) : (
-            <form onSubmit={(event) => void signIn(event)} className="login-form">
-              <label htmlFor="email">Correo electrónico</label>
-              <input id="email" name="email" type="email" autoComplete="username" required maxLength={254}
-                value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} />
-              <label htmlFor="password">Contraseña</label>
-              <input id="password" name="password" type="password" autoComplete="current-password" required maxLength={128}
-                value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} />
-              <button type="submit" disabled={busy}>{busy ? 'Ingresando…' : 'Ingresar'}</button>
-              <p className="scope-note">Después de 5 intentos fallidos consecutivos, el ingreso se bloquea durante 15 minutos.</p>
-              <p className="scope-note">La recuperación de contraseña por correo no está disponible en este prototipo.</p>
-            </form>
-          )}
-          {error && <p className="auth-error" role="alert">{error}</p>}
-        </section>
-        {canManageMenu && user && user.id_restaurante !== null && <MenuManager key={user.id_restaurante} restaurant={user.id_restaurante} onSessionExpired={sessionExpired} />}
-      </main>
-      <footer>Prototipo de tesis · Desarrollo por etapas</footer>
+  const brand = <><span className="brand-mark"><Icon name="leaf" size={24}/></span><span>oliva<span className="brand-dot">.</span></span></>;
+  if (checking) return <div className="session-loading"><div className="app-brand">{brand}</div><span className="loading-ring"/><p>Preparando tu espacio…</p></div>;
+  if (!user) return <div className="login-page">
+    <div className="login-visual"><div className="app-brand">{brand}</div><div className="login-story"><span className="eyebrow">HECHO PARA TU RESTAURANTE</span><h1>Cada pedido,<br/>en su punto.</h1>
+      <p>Tu cocina, tu equipo y tus entregas.<br/>Todo conectado, de principio a fin.</p><div className="login-dish"><FoodPhoto name="Milanesa" hero/><div className="dish-label"><span className="dish-check"><Icon name="check"/></span><div><strong>El sabor de trabajar mejor</strong><small>Más orden. Más tiempo para lo que importa.</small></div></div></div>
+    </div><span className="login-footnote">Oliva · Gestión gastronómica</span></div>
+    <main className="login-main"><div className="login-panel"><span className="eyebrow">TU ESPACIO DE TRABAJO</span><h2>Bienvenido de nuevo</h2><p className="login-intro">Ingresá y poné tu restaurante en marcha.</p>
+      <form className="login-form" onSubmit={(event) => void signIn(event)}>
+        <label htmlFor="email">Correo electrónico</label><input id="email" type="email" autoComplete="username" placeholder="tu@restaurante.com" required maxLength={254} disabled={busy} value={email} onChange={(event) => setEmail(event.target.value)}/>
+        <label htmlFor="password">Contraseña</label><div className="password-field"><input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Ingresá tu contraseña" required maxLength={128} disabled={busy} value={password} onChange={(event) => setPassword(event.target.value)}/>
+          <button type="button" className="icon-button" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}><Icon name={showPassword ? 'eyeOff' : 'eye'}/></button></div>
+        <button className="primary-button login-submit" disabled={busy}>{busy ? 'Ingresando…' : 'Ingresar a mi espacio'}<Icon name="arrow"/></button>
+      </form>{error && <p className="auth-error" role="alert">{error}</p>}
+      {import.meta.env.DEV && __LOCAL_ACCOUNT_ACCESS__ && <div className="quick-access"><div className="divider-label"><span>Acceso por perfil</span></div><div className="quick-access-grid">
+        {[['propietario','Propietario','grid'],['personal','Personal','food'],['repartidor','Repartidor','truck']].map(([role,label,icon]) => <button key={role} disabled={busy} onClick={() => void quickAccess(role)}><Icon name={icon} size={22}/><span>{label}</span></button>)}
+      </div></div>}<p className="login-security"><Icon name="check" size={16}/>Acceso protegido para tu equipo</p>
+    </div><footer>Todo listo para un buen servicio.</footer></main>
+  </div>;
+  const initials = user.nombre.split(' ').filter(Boolean).slice(0,2).map((word) => word[0]).join('').toUpperCase();
+  return <div className={`app-shell${user.rol === 'cliente' ? ' app-shell--customer' : ''}`}>
+    {mobileMenu && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)}/>}
+    <aside className={`sidebar${mobileMenu ? ' sidebar--open' : ''}`}><a href={`#/${pages[0].path}`} className="app-brand" aria-label="Oliva, inicio">{brand}</a>
+      <div className="workspace-pill"><span className="workspace-avatar"><Icon name="food"/></span><div><strong>{user.id_restaurante ? `Restaurante ${user.id_restaurante}` : user.rol === 'cliente' ? 'Mi espacio' : 'Oliva'}</strong><small>{roleLabels[user.rol]}</small></div></div>
+      <nav aria-label="Navegación principal">{pages.map((page, index) => <div key={page.path}>{(index === 0 || pages[index-1].group !== page.group) && <p className="nav-group">{page.group}</p>}
+        <a href={`#/${page.path}`} className={`nav-link${current.path === page.path ? ' nav-link--active' : ''}`} aria-current={current.path === page.path ? 'page' : undefined}><Icon name={page.icon}/>{page.label}{current.path === page.path && <span className="nav-active-dot"/>}</a>
+      </div>)}</nav>
+      <div className="sidebar-bottom"><span className="sidebar-tagline"><Icon name="leaf" size={17}/>Un servicio a la vez.</span><div className="sidebar-user"><span className="avatar">{initials}</span><div><strong>{user.nombre}</strong><small>{roleLabels[user.rol]}</small></div><button className="icon-button" aria-label="Cerrar sesión" disabled={busy} onClick={() => void signOut()}><Icon name="logout"/></button></div></div>
+    </aside>
+    <div className="workspace"><header className="workspace-header"><div className="header-breadcrumb"><button className="icon-button mobile-menu" aria-label="Abrir navegación" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}><Icon name="menu"/></button><span>Mi espacio</span><span className="breadcrumb-slash">/</span><strong>{current.label}</strong></div>
+      <div className="header-actions"><span className="header-date">{new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</span>{staff && <a href="#/nuevo-pedido" className="primary-button"><Icon name="plus" size={18}/>Nuevo pedido</a>}<span className="avatar avatar--small" title={user.nombre}>{initials}</span></div></header>
+      <main className="workspace-main" id="main-content"><div className="page-intro"><div><span className="eyebrow">{current.group}</span><h1>{current.label}</h1><p>{current.description}</p></div>{current.path === 'resumen' && <span className="greeting-chip">Hola, {user.nombre.split(' ')[0]}<Icon name="leaf" size={17}/></span>}</div>
+        {error && <p role="alert" className="auth-error">{error}</p>}<div className="page-content" key={`${user.id_usuario}-${current.path}`}>
+          {current.path === 'soporte' && <AccountSupport onSessionExpired={sessionExpired}/>}
+          {staff && user.id_restaurante !== null && <>
+            {current.path === 'resumen' && <Dashboard restaurant={user.id_restaurante} owner={user.rol === 'propietario'} onSessionExpired={sessionExpired}/>}
+            {current.path === 'catalogo' && <MenuManager restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
+            {(current.path === 'pedidos' || current.path === 'nuevo-pedido') && <Orders restaurant={user.id_restaurante} view={current.path === 'nuevo-pedido' ? 'create' : 'list'} onSessionExpired={sessionExpired}/>}
+            {current.path === 'repartidores' && <Couriers restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
+            {current.path === 'prioridades' && <Logistics restaurant={user.id_restaurante} courier={false} view="priorities" onSessionExpired={sessionExpired}/>}
+            {current.path === 'entregas' && <Logistics restaurant={user.id_restaurante} courier={false} view="deliveries" onSessionExpired={sessionExpired}/>}
+            {current.path === 'demanda' && <Analytics restaurant={user.id_restaurante} view="forecast" onSessionExpired={sessionExpired}/>}
+            {current.path === 'indicadores' && <Analytics restaurant={user.id_restaurante} view="metrics" onSessionExpired={sessionExpired}/>}
+          </>}
+          {user.rol === 'repartidor' && user.id_restaurante !== null && (current.path === 'entregas' ? <Logistics restaurant={user.id_restaurante} courier view="deliveries" onSessionExpired={sessionExpired}/> : <Couriers restaurant={null} onSessionExpired={sessionExpired}/>)}
+          {user.rol === 'cliente' && <Orders restaurant={null} view={current.path === 'menu' ? 'menu' : 'list'} onSessionExpired={sessionExpired}/>}
+        </div>
+      </main><footer className="workspace-footer"><span>Oliva · Hecho para tu restaurante</span><span>Que sea un buen servicio.</span></footer>
     </div>
-  );
+  </div>;
 }

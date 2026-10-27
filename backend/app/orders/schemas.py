@@ -2,8 +2,32 @@
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+
+
+class OrderItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id_producto: int = Field(gt=0, strict=True)
+    cantidad: int = Field(gt=0, le=2147483647, strict=True)
+
+
+class OrderInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    correo_cliente: str = Field(min_length=3, max_length=254)
+    direccion_entrega: str = Field(min_length=1, max_length=500)
+    referencia_local: str | None = Field(default=None, max_length=500)
+    zona_entrega: str | None = Field(default=None, max_length=150)
+    medio_pago: str = Field(min_length=1, max_length=50)
+    distancia_km: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=3, allow_inf_nan=False)]
+    detalles: list[OrderItemInput] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_products(self):
+        if len({item.id_producto for item in self.detalles}) != len(self.detalles):
+            raise ValueError("No repitas productos; modificá su cantidad.")
+        return self
 
 
 class RestaurantOutput(BaseModel):

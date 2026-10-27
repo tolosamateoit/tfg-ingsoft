@@ -70,7 +70,8 @@ def main():
             host="127.0.0.1", port=port, dbname="tfg_test_hu01", user="postgres", password=password,
         )
         print(f"PostgreSQL {version}; base tfg_test_hu01 en loopback; rol propietario postgres sin superusuario.", flush=True)
-        result = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        arguments = sys.argv[1:] or ["discover", "-s", "tests", "-v"]
+        result = subprocess.run([sys.executable, "-m", "unittest", *arguments],
                                 cwd=BACKEND, env=environment)
         return result.returncode
     finally:
