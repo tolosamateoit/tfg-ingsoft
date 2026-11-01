@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_serializer,
 
 class PreparationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    estado: Literal["En preparación", "Listo"]
+    estado: Literal["En preparación", "Listo", "Cancelado"]
     version: int = Field(ge=0, strict=True)
     nueva_preparacion: StrictBool = False
     motivo: str = Field(default="", max_length=500)

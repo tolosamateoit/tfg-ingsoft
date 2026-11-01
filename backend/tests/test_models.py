@@ -43,7 +43,12 @@ class ModelStructureTests(unittest.TestCase):
         self.assertEqual(set(Base.metadata.tables), set(DER_COLUMNS))
         for name, columns in DER_COLUMNS.items():
             with self.subTest(table=name):
-                self.assertEqual(set(Base.metadata.tables[name].columns.keys()), set(columns.split()))
+                approved = {"descripcion", "imagen_url"} if name == "producto" else set()
+                self.assertEqual(set(Base.metadata.tables[name].columns.keys()), set(columns.split()) | approved)
+
+    def test_approved_product_presentation_attributes_are_optional(self):
+        for name in ("descripcion", "imagen_url"):
+            self.assertTrue(Base.metadata.tables["producto"].c[name].nullable)
 
     def test_mappers_and_postgresql_ddl_compile(self):
         configure_mappers()

@@ -1,4 +1,18 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { formatDateTime, timestamp } from '../services/format';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+
+export function StateClock({ since, state }: { since: string; state: string }) {
+  const [now, setNow] = useState(Date.now());
+  const terminal = ['Entregado', 'No entregado', 'Cancelado'].includes(state);
+  useEffect(() => {
+    if (terminal) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [terminal, since]);
+  if (terminal) return <p className="muted">Finalizado: {formatDateTime(since)}</p>;
+  const seconds = Math.max(0, Math.floor((now - timestamp(since).getTime()) / 1000));
+  return <p className="state-clock"><Icon name="clock" size={16}/><span>En {state.toLowerCase()}: <strong>{Math.floor(seconds / 3600).toString().padStart(2, '0')}:{Math.floor(seconds / 60 % 60).toString().padStart(2, '0')}:{(seconds % 60).toString().padStart(2, '0')}</strong></span></p>;
+}
 
 const paths: Record<string, ReactNode> = {
   grid: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
@@ -26,12 +40,15 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
 }
 export function Status({ value }: { value: string }) {
   const tone = ['Entregado', 'Listo', 'Disponible', 'Activa'].includes(value) ? 'success'
-    : ['No entregado', 'No disponible', 'Inactiva'].includes(value) ? 'danger' : ['En preparación', 'Ocupado'].includes(value) ? 'warning' : 'neutral';
+    : ['No entregado', 'Cancelado', 'No disponible', 'Inactiva'].includes(value) ? 'danger' : ['En preparación', 'Ocupado'].includes(value) ? 'warning' : 'neutral';
   return <span className={`status-badge status-badge--${tone}`}><i />{value}</span>;
 }
-export function FoodPhoto({ name, hero = false }: { name: string; hero?: boolean }) {
+export function FoodPhoto({ name, hero = false, src }: { name: string; hero?: boolean; src?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
   const text = name.toLowerCase();
   const index = /pizza|muzza/.test(text) ? 1 : /hamburg|burger/.test(text) ? 2 : /ensalad|salad/.test(text) ? 3 : /empanad/.test(text) ? 4 : /pasta|fideo|raviol/.test(text) ? 5 : 0;
+  if (src && !failed) return <img className={`food-photo product-photo${hero ? ' food-photo--hero' : ''}`} src={src} alt={name} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)}/>;
   return <div className={`food-photo${hero ? ' food-photo--hero' : ''}`} role="img" aria-label={`Imagen ilustrativa de ${name}`}
     style={{ backgroundPosition: `${(index % 3) * 50}% ${Math.floor(index / 3) * 100}%` }} />;
 }
@@ -39,7 +56,7 @@ export function Dialog({ title, children, onClose, busy = false }: { title: stri
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { ref.current?.showModal(); }, []);
   return <dialog ref={ref} className="editor-dialog" aria-label={title} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
-    <div className="dialog-heading"><div><span className="eyebrow">Tu restaurante</span><h2>{title}</h2></div>
+    <div className="dialog-heading"><div><span className="eyebrow">Oliva</span><h2>{title}</h2></div>
       <button type="button" className="icon-button" aria-label={`Cerrar ${title}`} disabled={busy} onClick={onClose}><Icon name="close" /></button></div>
     {children}
   </dialog>;

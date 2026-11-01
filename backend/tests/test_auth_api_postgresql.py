@@ -92,7 +92,7 @@ class AuthApiPostgreSQLTests(test_auth.AuthApiTests):
             catalog = inspect(connection)
             self.assertEqual(len(catalog.get_table_names(schema="public")), 18)
             self.assertEqual(connection.execute(text("SELECT version_num FROM public.alembic_version")).scalar_one(),
-                             "0002_hu01_auth")
+                             "0003_producto_presentacion")
             fk = catalog.get_foreign_keys("auth_sesion", schema="public")
             self.assertEqual(len(fk), 1)
             self.assertEqual(fk[0]["referred_table"], "usuario")

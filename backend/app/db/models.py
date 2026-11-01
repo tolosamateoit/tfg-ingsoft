@@ -1,7 +1,8 @@
 """Entidades de docs/der/der.png, pendientes de aprobación para Supabase.
 
 No crear tablas al importar. La revisión 0001 agrega los triggers de pertenencia
-aprobados y preserva esta estructura sin columnas adicionales.
+aprobados. La revisi?n 0003 incorpora los dos atributos opcionales de producto
+autorizados para la carta del cliente.
 """
 
 from datetime import date, datetime
@@ -94,6 +95,9 @@ class Producto(Base):
     precio: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     costo_unitario: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     activo: Mapped[bool] = mapped_column(Boolean)
+    # Extensión opcional autorizada para la carta del cliente (revisión 0003).
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    imagen_url: Mapped[str | None] = mapped_column(Text)
 
     restaurante: Mapped["Restaurante"] = relationship(back_populates="productos")
     receta: Mapped[list["RecetaDetalle"]] = relationship(back_populates="producto")

@@ -2,11 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import select
 
 from app.auth.dependencies import DB, require_restaurant
-from app.db.models import Insumo, Producto, Usuario
+from app.db.models import Insumo, MovimientoStock, Producto, Usuario
+from app.menu.inventory import IngredientInput, MovementInput, record_movement, save_ingredient
 from app.menu.schemas import IngredientOutput, ProductInput, ProductOutput, RecipeInput, RecipeOutput
 from app.menu.service import create_product, product_in_restaurant, recipe_output, save_recipe, update_product
 
@@ -36,6 +37,33 @@ def edit_product(id_restaurante: RestaurantId, id_producto: ProductId, data: Pro
 def ingredients(id_restaurante: RestaurantId, db: DB, user: MenuUser):
     return db.scalars(select(Insumo).where(Insumo.id_restaurante == id_restaurante)
                       .order_by(Insumo.nombre, Insumo.id_insumo)).all()
+
+
+@router.post("/insumos", response_model=IngredientOutput, status_code=201)
+def add_ingredient(id_restaurante: RestaurantId, data: IngredientInput, db: DB, user: MenuUser):
+    return save_ingredient(db, id_restaurante, data)
+
+
+@router.put("/insumos/{id_insumo}", response_model=IngredientOutput)
+def edit_ingredient(id_restaurante: RestaurantId, id_insumo: ProductId, data: IngredientInput, db: DB, user: MenuUser):
+    return save_ingredient(db, id_restaurante, data, id_insumo)
+
+
+@router.post("/insumos/{id_insumo}/movimientos", response_model=IngredientOutput, status_code=201)
+def add_movement(id_restaurante: RestaurantId, id_insumo: ProductId, data: MovementInput, db: DB, user: MenuUser):
+    return record_movement(db, id_restaurante, id_insumo, data, user.id_usuario)
+
+
+@router.get("/movimientos-stock")
+def movements(id_restaurante: RestaurantId, db: DB, user: MenuUser,
+              offset: Annotated[int, Query(ge=0)] = 0):
+    return [dict(row) for row in db.execute(select(
+        MovimientoStock.id_movimiento, MovimientoStock.id_insumo, Insumo.nombre, Insumo.unidad,
+        MovimientoStock.id_pedido, MovimientoStock.fecha_hora, MovimientoStock.tipo,
+        MovimientoStock.cantidad, MovimientoStock.motivo,
+    ).join(Insumo).where(Insumo.id_restaurante == id_restaurante)
+      .order_by(MovimientoStock.fecha_hora.desc(), MovimientoStock.id_movimiento.desc())
+      .offset(offset).limit(30)).mappings()]
 
 
 @router.get("/productos/{id_producto}/receta", response_model=RecipeOutput)

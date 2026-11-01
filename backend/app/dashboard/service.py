@@ -1,4 +1,3 @@
-from collections import Counter
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -7,13 +6,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analytics.forecast import latest_forecast
-from app.analytics.metrics import list_alerts, metrics
+from app.analytics.metrics import metrics
 from app.analytics.schemas import AlertOutput, ForecastOutput, PeriodInput
 from app.auth.service import as_utc
 from app.couriers.schemas import CourierPage
 from app.couriers.service import list_couriers
-from app.db.models import Usuario
-from app.logistics.priority import priorities
+from app.db.models import Pedido, Usuario
+from app.logistics.priority import ACTIVE, priorities
 from app.logistics.schemas import DeliveryOutput, PriorityPage
 from app.logistics.service import deliveries
 from app.preparation.schemas import StockOutput
@@ -52,12 +51,18 @@ def dashboard(db: Session, user: Usuario, restaurant_id: int, period: PeriodInpu
         forecast = latest_forecast(db, restaurant_id)
     else:
         inventory, couriers = stock(db, restaurant_id), list_couriers(db, user)
-        # Personal recibe incidencias operativas, sin alertas de importes ni predicciones.
-        alerts = [alert for alert in list_alerts(db, restaurant_id) if alert.tipo in {"stock", "preparacion", "entrega"}]
+        # Los indicadores y las alertas están reservados al propietario.
+        alerts = []
         indicators, forecast = None, None
     ordered = priorities(db, restaurant_id)
+    from app.analytics.operational import owner_order_warnings
+    warnings = owner_order_warnings(db, user, None)
+    for row in ordered.pedidos:
+        row.advertencia_importe = warnings.get(row.id_pedido, {}).get('advertencia_importe')
+    counts = dict(db.execute(select(Pedido.estado, func.count()).where(
+        Pedido.id_restaurante == restaurant_id, Pedido.estado.in_(ACTIVE)).group_by(Pedido.estado)).all())
     return DashboardOutput(id_restaurante=restaurant_id, actualizado_en=as_utc(db.scalar(select(func.now()))),
-                           prioridades=ordered, pedidos_por_estado=dict(Counter(order.estado for order in ordered.pedidos)),
-                           entregas_recientes=deliveries(db, user, 0), stock=inventory, repartidores=couriers,
+                           prioridades=ordered, pedidos_por_estado=counts,
+                           entregas_recientes=deliveries(db, user, 0, warnings=warnings), stock=inventory, repartidores=couriers,
                            alertas_activas=[alert for alert in alerts if alert.estado == "Activa"],
                            indicadores=indicators, prediccion_guardada=forecast)

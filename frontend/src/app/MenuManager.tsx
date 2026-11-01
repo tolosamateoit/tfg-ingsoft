@@ -1,3 +1,5 @@
+import { apiKey, cacheScope, queryClient, ensureApiQuery } from '../services/queryCache';
+import { useApiQuery } from '../services/useApiQuery';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Dialog, FoodPhoto, Icon } from './ui';
 import {
@@ -16,7 +18,8 @@ function ProductForm({ product, busy, onSave, onCancel }: {
   product?: Product; busy: boolean; onSave: (data: ProductInput) => void; onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<ProductInput>({ nombre: product?.nombre ?? '', precio: product?.precio ?? '',
-    costo_unitario: product?.costo_unitario ?? '', activo: product?.activo ?? true });
+    costo_unitario: product?.costo_unitario ?? '', activo: product?.activo ?? true,
+    descripcion: product?.descripcion ?? '', imagen_url: product?.imagen_url ?? '' });
   function submit(event: FormEvent) { event.preventDefault(); onSave(draft); }
   return (
     <form className="menu-form" onSubmit={submit} aria-label={product ? 'Editar producto' : 'Nuevo producto'}>
@@ -33,6 +36,8 @@ function ProductForm({ product, busy, onSave, onCancel }: {
             <input id="product-cost" type="number" min="0" step="0.01" required value={draft.costo_unitario}
               onChange={(event) => setDraft({ ...draft, costo_unitario: event.target.value })} /></div>
         </div>
+        <label htmlFor="product-description">Descripción (opcional)</label><textarea id="product-description" maxLength={1000} value={draft.descripcion ?? ''} onChange={(event) => setDraft({ ...draft, descripcion: event.target.value })}/>
+        <label htmlFor="product-image">URL de imagen (opcional)</label><input id="product-image" maxLength={2000} value={draft.imagen_url ?? ''} placeholder="https://… o /images/…" onChange={(event) => setDraft({ ...draft, imagen_url: event.target.value })}/>
         <label className="checkbox-label"><input type="checkbox" checked={draft.activo}
           onChange={(event) => setDraft({ ...draft, activo: event.target.checked })} />Activo en el menú</label>
         <div className="menu-actions">
@@ -47,20 +52,22 @@ function ProductForm({ product, busy, onSave, onCancel }: {
 function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExpired, onBusyChange }: {
   restaurant: number; product: Product; ingredients: Ingredient[]; onCancel: () => void; onSessionExpired: () => void; onBusyChange: (busy: boolean) => void;
 }) {
-  const [rows, setRows] = useState<(RecipeItem & { key: number })[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loaded, setLoaded] = useState(false);
+  const path = `restaurantes/${restaurant}/productos/${product.id_producto}/receta`;
+  const cached = queryClient.getQueryData<import('../services/menu').Recipe>(apiKey(path));
+  const [rows, setRows] = useState<(RecipeItem & { key: number })[]>(() => cached?.detalles.map((item,key) => ({...item,key})) ?? []);
+  const [loading, setLoading] = useState(!cached);
+  const [loaded, setLoaded] = useState(!!cached);
   const [retry, setRetry] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const nextKey = useRef(0);
+  const nextKey = useRef(rows.length);
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setLoaded(false); setError('');
-    void getRecipe(restaurant, product.id_producto, controller.signal).then((recipe) => {
+    setLoading(!queryClient.getQueryData(apiKey(path))); setError('');
+    void ensureApiQuery(path, (signal) => getRecipe(restaurant, product.id_producto, signal)).then((recipe) => {
       if (!controller.signal.aborted) { setRows(recipe.detalles.map((item) => ({ ...item, key: nextKey.current++ }))); setLoaded(true); }
     }).catch((failure: unknown) => {
       if (!controller.signal.aborted) {
@@ -80,8 +87,10 @@ function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExp
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setError(''); setNotice('');
+    const key = apiKey(path);
     try {
       const recipe = await saveRecipe(restaurant, product.id_producto, rows.map(({ id_insumo, cantidad, unidad }) => ({ id_insumo, cantidad, unidad })));
+      if (key[0] === cacheScope()) queryClient.setQueryData(key, recipe);
       setRows(recipe.detalles.map((item) => ({ ...item, key: nextKey.current++ })));
       setNotice('Receta guardada.');
     } catch (failure) {
@@ -133,36 +142,24 @@ function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExp
 }
 
 export default function MenuManager({ restaurant, onSessionExpired }: Props) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [reload, setReload] = useState(0);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true); setError('');
-    void Promise.all([listProducts(restaurant, controller.signal), listIngredients(restaurant, controller.signal)])
-      .then(([items, supplies]) => { if (!controller.signal.aborted) { setProducts(items); setIngredients(supplies); } })
-      .catch((failure: unknown) => {
-        if (!controller.signal.aborted) {
-          setError(errorMessage(failure));
-          if (failure instanceof MenuError && failure.status === 401) onSessionExpired();
-        }
-      }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [restaurant, reload, onSessionExpired]);
+  const catalog = useApiQuery(`restaurantes/${restaurant}/productos`, (signal) => listProducts(restaurant, signal), onSessionExpired);
+  const supplies = useApiQuery(`restaurantes/${restaurant}/insumos`, (signal) => listIngredients(restaurant, signal), onSessionExpired);
+  const products = catalog.data ?? [];
+  const ingredients = supplies.data ?? [];
+  const loading = catalog.isPending || supplies.isPending;
+  const queryError = catalog.error?.message ?? supplies.error?.message;
+  async function reload() { await Promise.all([catalog.refetch({cancelRefetch:false}), supplies.refetch({cancelRefetch:false})]); }
 
   async function saveProduct(data: ProductInput) {
     if (editor?.kind !== 'product') return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const product = editor.product ? await updateProduct(restaurant, editor.product.id_producto, data) : await createProduct(restaurant, data);
-      setProducts((previous) => [...previous.filter((item) => item.id_producto !== product.id_producto), product]
-        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es') || a.id_producto - b.id_producto));
+      editor.product ? await updateProduct(restaurant, editor.product.id_producto, data) : await createProduct(restaurant, data);
       setEditor(null); setNotice('Producto guardado.');
     } catch (failure) {
       setError(errorMessage(failure));
@@ -175,16 +172,17 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
       <div className="menu-heading"><div><h2 id="menu-title">Tu carta</h2><p>Productos que salen de tu cocina. Imágenes ilustrativas.</p></div>
         <div className="menu-actions">
           <button className="primary-button" type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product' }); }}><Icon name="plus" size={17}/>Nuevo producto</button>
-          <button type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setReload(reload + 1); }}>Actualizar catálogo</button>
+          <button type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); void reload(); }}>Actualizar catálogo</button>
         </div>
       </div>
       {loading && <p role="status">Cargando catálogo…</p>}
-      {error && !editor && <p className="auth-error" role="alert">{error}</p>}
+      {(error || queryError) && !editor && <p className="auth-error" role="alert">{error || queryError}</p>}
       {notice && <p className="menu-notice" role="status">{notice}</p>}
       {!loading && !error && products.length === 0 && <p>Todavía no hay productos. Creá el primero para comenzar.</p>}
       <div className="catalog-grid">
         {products.map((product) => <article className="product-card catalog-product" key={product.id_producto}>
-          <FoodPhoto name={product.nombre}/>
+          <FoodPhoto name={product.nombre} src={product.imagen_url}/>
+          {product.descripcion && <p>{product.descripcion}</p>}
           <div className="product-title"><h3>{product.nombre}</h3><span className={`product-state ${product.activo ? 'product-state--active' : ''}`}>{product.activo ? 'Activo' : 'Inactivo'}</span></div>
           <dl><dt>Precio de venta</dt><dd>{formatMoney(product.precio)}</dd><dt>Costo unitario</dt><dd>{formatMoney(product.costo_unitario)}</dd></dl>
           <div className="menu-actions">

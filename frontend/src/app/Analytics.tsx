@@ -1,100 +1,88 @@
+import { useApiQuery } from '../services/useApiQuery';
+import { formatCalendarDate } from '../services/format';
+import OperationalAnalytics from './OperationalAnalytics';
 import { useEffect, useState } from 'react';
 import { operationRequest } from '../services/operations';
-import { OrderError } from '../services/orders';
-import type { Alert, Forecast, Metrics } from '../services/analytics';
+import type { DayForecast } from '../services/analytics';
 
 type Props = { restaurant: number; view?: 'forecast' | 'metrics'; onSessionExpired: () => void };
-const labels: Record<string, string> = { importe: 'Importe por pedido ($)', preparacion: 'Preparación (min)', entrega: 'Entrega (min)', stock: 'Stock' };
-const number = (value: string | null) => value === null ? 'Sin muestras' : Number(value).toLocaleString('es-AR', { maximumFractionDigits: 6 });
-function utcDate(offset: number) { const date = new Date(); date.setUTCDate(date.getUTCDate() + offset); return date.toISOString().slice(0, 10); }
+const inventoryAmount = (value: string, unit: string) => {
+  const amount = Number(value);
+  const whole = ['unidad', 'unidades', 'u'].includes(unit.toLowerCase());
+  const label = whole ? 'un.' : ['l', 'litro', 'litros'].includes(unit.toLowerCase()) ? 'L' : unit;
+  const formatted = !whole && amount !== 0 && Math.abs(amount) < 0.01
+    ? (amount > 0 ? '<0,01' : '>−0,01')
+    : amount.toLocaleString('es-AR', { maximumFractionDigits: whole ? 0 : 2 });
+  return `${formatted} ${label}`;
+};
 
-export default function Analytics({ restaurant, view = 'forecast', onSessionExpired }: Props) {
-  const [forecast, setForecast] = useState<Forecast | null>(null);
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [period, setPeriod] = useState({ inicio: utcDate(-7), fin: utcDate(-1) });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const base = `restaurantes/${restaurant}`;
-
-  function failed(failure: unknown) {
-    if (failure instanceof OrderError && failure.status === 401) onSessionExpired();
-    else setError(failure instanceof Error ? failure.message : 'No se pudo completar la operación.');
-  }
-  async function run(action: () => Promise<void>) {
-    setBusy(true); setError('');
-    try { await action(); }
-    catch (failure) { failed(failure); }
-    finally { setBusy(false); }
-  }
-  useEffect(() => {
-    const controller = new AbortController();
-    void Promise.all([
-      operationRequest<Forecast>(`${base}/predicciones`, undefined, controller.signal),
-      operationRequest<Alert[]>(`${base}/alertas`, undefined, controller.signal),
-    ]).then(([saved, storedAlerts]) => { setForecast(saved); setAlerts(storedAlerts); })
-      .catch((failure: unknown) => { if (!controller.signal.aborted) failed(failure); });
-    return () => controller.abort();
-  }, [restaurant]);
-
-  return <section id="analitica-restaurante" className="menu-manager" aria-label="Predicción e indicadores">
-    {error && <p role="alert" className="auth-error">{error}</p>}
-    {view === 'forecast' && <><h2>Prepará tu próxima semana</h2>
-    <p>Regresión lineal por producto con pedidos entregados de días completos en UTC. Requiere 7 días de historial y 10 pedidos completados.</p>
-    <div className="menu-actions">
-      <button disabled={busy} onClick={() => void run(async () => setForecast(await operationRequest<Forecast>(`${base}/predicciones`, {}, undefined, 'POST')))}>Generar predicción (7 días)</button>
-      <button disabled={busy} onClick={() => void run(async () => setForecast(await operationRequest<Forecast>(`${base}/predicciones`)))}>Consultar última predicción guardada</button>
+export function ForecastDetails({ forecast, onSelect, busy = false, selectedDate }: {
+  forecast: DayForecast; onSelect?: (date: string) => void; busy?: boolean; selectedDate?: string | null;
+}) {
+  const shortages = forecast.insumos.filter((row) => Number(row.faltante) > 0);
+  const selected = selectedDate ?? forecast.fecha_seleccionada;
+  return <div className="demand-forecast" aria-busy={busy}>
+    <header className="forecast-heading">
+      <h2>¿Qué vas a necesitar vender?</h2><p>Elegí el día y prepará tu rotisería.</p></header>
+    <div className="forecast-days" role="group" aria-label="Elegir fecha de previsión">
+      {forecast.fechas_disponibles.map((option) => <button key={option.fecha} type="button"
+        aria-pressed={selected === option.fecha} onClick={() => onSelect?.(option.fecha)}>
+        <span>{option.etiqueta.split(' ')[0]}</span><strong>{option.etiqueta.split(' ')[1]}</strong>
+      </button>)}
     </div>
-    {forecast && <>
-      <p role="status" className="menu-notice">{forecast.estado}</p>
-      {forecast.dias_historial !== null && <p>Historial: {forecast.dias_historial} día(s) · Pedidos completados: {forecast.pedidos_completados}</p>}
-      {forecast.dias_validacion !== null && <p>Validación cronológica: últimos {forecast.dias_validacion} días. MAE mide error medio en unidades por día; menor es mejor.</p>}
-      <p>Las estimaciones negativas del modelo se limitan a cero. Las cantidades son estimaciones, no ventas confirmadas.</p>
-      <div className="catalog-grid">{forecast.predicciones.map((row) => <article className="product-card" key={row.id_prediccion}>
-        <h3>{row.producto}</h3><p>{row.periodo_inicio} a {row.periodo_fin} UTC</p>
-        <p>Demanda estimada total: {number(row.demanda_estimada)} unidades</p>
-        <p>{row.nombre_metrica}: {number(row.valor_metrica)} unidades/día</p>
-        <p>Guardada: {new Date(row.generada_en).toLocaleString('es-AR')}</p><p className="scope-note">Modelo: regresión lineal diaria.</p>
-      </article>)}</div>
-      {forecast.productos_sin_ventas.length > 0 && <p>Sin ventas históricas para entrenar: {forecast.productos_sin_ventas.join(', ')}.</p>}
-      {forecast.predicciones.length > 0 && <><h3>Insumos necesarios y stock actual</h3>
-        {forecast.recetas_faltantes.length > 0 && <p role="alert" className="auth-error">Cálculo parcial: faltan recetas de {forecast.recetas_faltantes.join(', ')}.</p>}
-        <ul>{forecast.insumos.map((row) => <li key={row.id_insumo}>{row.nombre} ({row.unidad}): necesario {number(row.cantidad_necesaria)}, stock {number(row.stock_actual)}, faltante {number(row.faltante)}</li>)}</ul>
+    {busy ? <p className="forecast-loading" role="status">Calculando lo que vas a necesitar…</p> : <>
+      {forecast.aviso && <p role="status" className="forecast-notice">{forecast.aviso}</p>}
+      {forecast.pedidos_estimados !== null && <>
+        <p className="forecast-date">Para el {formatCalendarDate(forecast.fecha_seleccionada!)}</p>
+        <div className="forecast-summary">
+          <div><strong>{forecast.pedidos_estimados}</strong><span>pedidos estimados</span></div>
+          <div className={forecast.cantidad_faltantes ? 'forecast-shortage' : 'forecast-covered'}>
+            <strong>{forecast.cantidad_faltantes}</strong><span>insumos con faltantes</span></div>
+        </div>
+        <section className="forecast-section" aria-labelledby="forecast-products-title">
+          <h3 id="forecast-products-title">Productos que conviene preparar</h3>
+          <div className="forecast-products">{forecast.productos.filter((row) => row.cantidad > 0).map((row) =>
+            <article className="forecast-product" key={row.id_producto}><h4>{row.nombre}</h4>
+              <p><strong>{row.cantidad}</strong><span>unidades</span></p></article>)}</div>
+          {forecast.productos.every((row) => row.cantidad === 0) && <p>No se prevén unidades para preparar este día.</p>}
+        </section>
+        <section className="forecast-section" aria-labelledby="forecast-shopping-title">
+          <h3 id="forecast-shopping-title">Qué necesitás comprar</h3>
+          {shortages.length ? <ul className="forecast-shopping">{shortages.map((row) =>
+            <li key={row.id_insumo}><div><strong>{row.nombre}</strong>
+              <span>Disponible: {inventoryAmount(row.stock_actual, row.unidad)}</span></div>
+              <div className="forecast-buy"><span>Comprar</span><strong>{inventoryAmount(row.reposicion_sugerida, row.unidad)}</strong></div></li>)}</ul>
+            : forecast.compras_completas ? <p className="forecast-success">¡Tenés stock suficiente para lo previsto!</p>
+              : <p className="forecast-notice">Completá las recetas para revisar todas las compras.</p>}
+        </section>
+        <aside className="forecast-reason"><h3>Por qué esta recomendación</h3><p>{forecast.explicaciones.join(' ')}</p></aside>
+        <p className="forecast-footnote">Una guía para preparar tu día. Las cantidades son estimadas.</p>
       </>}
     </>}
-    </>}
-    {view === 'metrics' && <><h2>Conocé tu operación</h2>
-    <form className="menu-form" onSubmit={(event) => { event.preventDefault(); void run(async () => {
-      const result = await operationRequest<Metrics>(`${base}/indicadores`, period, undefined, 'POST');
-      setMetrics(result); setAlerts(result.alertas);
-    }); }}>
-      <div className="form-columns"><div><label htmlFor="metrics-start">Inicio del período (UTC)</label>
-        <input id="metrics-start" type="date" required disabled={busy} max={period.fin} value={period.inicio} onChange={(event) => setPeriod({ ...period, inicio: event.target.value })} /></div>
-        <div><label htmlFor="metrics-end">Fin del período (UTC, incluido)</label>
-          <input id="metrics-end" type="date" required disabled={busy} min={period.inicio} max={utcDate(0)} value={period.fin} onChange={(event) => setPeriod({ ...period, fin: event.target.value })} /></div></div>
-      <button disabled={busy}>Calcular indicadores y alertas</button>
-    </form>
-    <p>Referencia: período inmediatamente anterior de igual duración. Se alerta al superar el 110 % de su promedio. Stock negativo: umbral cero.</p>
-    {metrics && <>
-      <p>Período calculado: {metrics.inicio} a {metrics.fin} UTC. Referencia: {metrics.referencia_inicio} a {metrics.referencia_fin} UTC.</p>
-      <div className="catalog-grid">{Object.entries(metrics.promedios).map(([key, value]) => <article className="product-card" key={key}>
-        <h3>{labels[key]}</h3><p>Promedio: {number(value)} · Muestras: {metrics.muestras[key]}</p>
-        <p>Promedio de referencia: {number(metrics.promedios_referencia[key])} · Muestras: {metrics.muestras_referencia[key]}</p>
-        {metrics.promedios_referencia[key] === null && <p>Sin datos de referencia: no se genera alerta para este indicador.</p>}
-      </article>)}</div>
-      <h3>Stock y disponibilidad actuales</h3><p>Estas consultas muestran el estado actual, no una reconstrucción histórica del período.</p>
-      <ul>{metrics.stock.map((row) => <li key={row.id_insumo}>{row.nombre}: {number(row.stock_actual)} {row.unidad}</li>)}</ul>
-      <p>{metrics.repartidores.delivery_disponible ? 'Delivery disponible' : 'Delivery no disponible'}</p>
-      <ul>{metrics.repartidores.repartidores.map((row) => <li key={row.id_repartidor}>{row.nombre}: {row.estado_disponibilidad} · {row.activo ? 'cuenta activa' : 'cuenta inactiva'}</li>)}</ul>
-    </>}
-    <h3>Alertas guardadas del restaurante (últimas 100)</h3>
-    <button disabled={busy} onClick={() => void run(async () => setAlerts(await operationRequest<Alert[]>(`${base}/alertas`)))}>Consultar alertas guardadas</button>
-    {!alerts.length && <p>No hay alertas guardadas.</p>}
-    <div className="catalog-grid">{alerts.map((row) => <article className="product-card" key={row.id_alerta}>
-      <h3>{labels[row.tipo] ?? row.tipo} · {row.estado}</h3><p>{row.descripcion}</p>
-      <p>Valor observado: {number(row.valor_observado)} · Umbral: {number(row.valor_referencia)}</p>
-      <p>Primera detección: {new Date(row.fecha_hora).toLocaleString('es-AR')}</p>
-    </article>)}</div>
-    </>}
-  </section>;
+  </div>;
+}
+
+function DemandForecast({ restaurant, onSessionExpired }: Omit<Props, 'view'>) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const path = `restaurantes/${restaurant}/predicciones/diaria${selected ? `?fecha=${encodeURIComponent(selected)}` : ''}`;
+  const query = useApiQuery<DayForecast>(path, (signal) => operationRequest(path, undefined, signal), onSessionExpired);
+  const [previous, setPrevious] = useState<DayForecast | null>(null);
+  useEffect(() => { if (query.data) setPrevious(query.data); }, [query.data]);
+  const forecast = query.data ?? previous;
+  const loading = query.isPending;
+  const failure = query.error?.message;
+  return <>
+    {failure && <p role="alert" className="auth-error">{failure} <button onClick={() => void query.refetch()}>Reintentar</button></p>}
+    {forecast && <button disabled={query.isFetching} onClick={() => void query.refetch()}>Actualizar previsión</button>}
+    {forecast ? <ForecastDetails forecast={forecast} selectedDate={selected} onSelect={setSelected}
+      busy={loading || Boolean(failure) || Boolean(selected && selected !== forecast.fecha_seleccionada)}/>
+      : <><h2>¿Qué vas a necesitar vender?</h2>{loading && <p role="status">Cargando tu previsión…</p>}</>}
+  </>;
+}
+
+export default function Analytics({ restaurant, view = 'forecast', onSessionExpired }: Props) {
+  return view === 'metrics' ? <OperationalAnalytics key={restaurant} restaurant={restaurant} onSessionExpired={onSessionExpired}/>
+    : <section id="analitica-restaurante" className="menu-manager" aria-label="Previsión de demanda">
+      <DemandForecast key={restaurant} restaurant={restaurant} onSessionExpired={onSessionExpired}/>
+    </section>;
 }

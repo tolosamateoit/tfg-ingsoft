@@ -1,14 +1,16 @@
-﻿import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient, startQuerySession, clearQuerySession } from '../services/queryCache';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AuthError, getSession, localAccountLogin, login, logout, type User } from '../services/auth';
 import MenuManager from './MenuManager';
+import Inventory from './Inventory';
 import Orders from './Orders';
 import Couriers from './Couriers';
 import Logistics from './Logistics';
 import Analytics from './Analytics';
-import Dashboard from './Dashboard';
 import AccountSupport from './AccountSupport';
 import { Icon, FoodPhoto } from './ui';
-import { newOrder, pagesFor, roleLabels } from './navigation';
+import { canonicalPath, newOrder, pagesFor, roleLabels } from './navigation';
 
 export default function AuthPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -20,10 +22,10 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [path, setPath] = useState(window.location.hash.replace(/^#\//, ''));
   const [mobileMenu, setMobileMenu] = useState(false);
-  const sessionExpired = useCallback(() => { setUser(null); setError('Tu sesión venció. Volvé a ingresar.'); }, []);
+  const sessionExpired = useCallback(() => { clearQuerySession(); setUser(null); setError('Tu sesión venció. Volvé a ingresar.'); }, []);
   const staff = user !== null && user.id_restaurante !== null && ['propietario', 'personal'].includes(user.rol);
   const pages = user ? pagesFor(user) : [];
-  const current = pages.find((page) => page.path === path) ?? (staff && path === newOrder.path ? newOrder : pages[0]);
+  const current = pages.find((page) => page.path === canonicalPath(path)) ?? (staff && path === newOrder.path ? newOrder : pages[0]);
   useEffect(() => {
     const changed = () => { setPath(window.location.hash.replace(/^#\//, '')); setMobileMenu(false); window.scrollTo(0, 0); };
     window.addEventListener('hashchange', changed);
@@ -35,12 +37,13 @@ export default function AuthPage() {
   }, [current?.path, path]);
   useEffect(() => {
     const controller = new AbortController();
-    void getSession(controller.signal).then((session) => { if (!controller.signal.aborted) setUser(session); })
+    void getSession(controller.signal).then((session) => { if (!controller.signal.aborted) { if (session) startQuerySession(session); else clearQuerySession(); setUser(session); } })
       .catch(() => { if (!controller.signal.aborted) setError('No se pudo comprobar tu sesión. Volvé a intentar.'); })
       .finally(() => { if (!controller.signal.aborted) setChecking(false); });
     return () => controller.abort();
   }, []);
   function enter(session: User) {
+    startQuerySession(session);
     const home = pagesFor(session)[0].path;
     window.history.replaceState(null, '', `#/${home}`);
     setPath(home); setUser(session); setMobileMenu(false);
@@ -59,7 +62,7 @@ export default function AuthPage() {
   }
   async function signOut() {
     setBusy(true); setError('');
-    try { await logout(); setUser(null); setMobileMenu(false); }
+    try { await logout(); clearQuerySession(); setUser(null); setMobileMenu(false); }
     catch { setError('No se pudo cerrar la sesión. Volvé a intentar.'); }
     finally { setBusy(false); }
   }
@@ -77,12 +80,12 @@ export default function AuthPage() {
         <button className="primary-button login-submit" disabled={busy}>{busy ? 'Ingresando…' : 'Ingresar a mi espacio'}<Icon name="arrow"/></button>
       </form>{error && <p className="auth-error" role="alert">{error}</p>}
       {import.meta.env.DEV && __LOCAL_ACCOUNT_ACCESS__ && <div className="quick-access"><div className="divider-label"><span>Acceso por perfil</span></div><div className="quick-access-grid">
-        {[['propietario','Propietario','grid'],['personal','Personal','food'],['repartidor','Repartidor','truck']].map(([role,label,icon]) => <button key={role} disabled={busy} onClick={() => void quickAccess(role)}><Icon name={icon} size={22}/><span>{label}</span></button>)}
+        {[['propietario','Propietario','grid'],['personal','Personal','food'],['repartidor','Repartidor','truck'],['cliente','Cliente','people']].map(([role,label,icon]) => <button key={role} disabled={busy} onClick={() => void quickAccess(role)}><Icon name={icon} size={22}/><span>{label}</span></button>)}
       </div></div>}<p className="login-security"><Icon name="check" size={16}/>Acceso protegido para tu equipo</p>
     </div><footer>Todo listo para un buen servicio.</footer></main>
   </div>;
   const initials = user.nombre.split(' ').filter(Boolean).slice(0,2).map((word) => word[0]).join('').toUpperCase();
-  return <div className={`app-shell${user.rol === 'cliente' ? ' app-shell--customer' : ''}`}>
+  return <QueryClientProvider client={queryClient}><div className={`app-shell${user.rol === 'cliente' ? ' app-shell--customer' : ''}`}>
     {mobileMenu && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)}/>}
     <aside className={`sidebar${mobileMenu ? ' sidebar--open' : ''}`}><a href={`#/${pages[0].path}`} className="app-brand" aria-label="Oliva, inicio">{brand}</a>
       <div className="workspace-pill"><span className="workspace-avatar"><Icon name="food"/></span><div><strong>{user.id_restaurante ? `Restaurante ${user.id_restaurante}` : user.rol === 'cliente' ? 'Mi espacio' : 'Oliva'}</strong><small>{roleLabels[user.rol]}</small></div></div>
@@ -94,22 +97,21 @@ export default function AuthPage() {
     <div className="workspace"><header className="workspace-header"><div className="header-breadcrumb"><button className="icon-button mobile-menu" aria-label="Abrir navegación" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}><Icon name="menu"/></button><span>Mi espacio</span><span className="breadcrumb-slash">/</span><strong>{current.label}</strong></div>
       <div className="header-actions"><span className="header-date">{new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</span>{staff && <a href="#/nuevo-pedido" className="primary-button"><Icon name="plus" size={18}/>Nuevo pedido</a>}<span className="avatar avatar--small" title={user.nombre}>{initials}</span></div></header>
       <main className="workspace-main" id="main-content"><div className="page-intro"><div><span className="eyebrow">{current.group}</span><h1>{current.label}</h1><p>{current.description}</p></div>{current.path === 'resumen' && <span className="greeting-chip">Hola, {user.nombre.split(' ')[0]}<Icon name="leaf" size={17}/></span>}</div>
-        {error && <p role="alert" className="auth-error">{error}</p>}<div className="page-content" key={`${user.id_usuario}-${current.path}`}>
+        {error && <p role="alert" className="auth-error">{error}</p>}<div className="page-content" key={`${user.id_usuario}-${user.id_restaurante}-${current.path}`}>
           {current.path === 'soporte' && <AccountSupport onSessionExpired={sessionExpired}/>}
           {staff && user.id_restaurante !== null && <>
-            {current.path === 'resumen' && <Dashboard restaurant={user.id_restaurante} owner={user.rol === 'propietario'} onSessionExpired={sessionExpired}/>}
             {current.path === 'catalogo' && <MenuManager restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
+            {current.path === 'stock' && <Inventory restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
             {(current.path === 'pedidos' || current.path === 'nuevo-pedido') && <Orders restaurant={user.id_restaurante} view={current.path === 'nuevo-pedido' ? 'create' : 'list'} onSessionExpired={sessionExpired}/>}
-            {current.path === 'repartidores' && <Couriers restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
-            {current.path === 'prioridades' && <Logistics restaurant={user.id_restaurante} courier={false} view="priorities" onSessionExpired={sessionExpired}/>}
+            {current.path === 'repartidores' && <Couriers restaurant={user.id_restaurante} owner={user.rol === 'propietario'} onSessionExpired={sessionExpired}/>}
             {current.path === 'entregas' && <Logistics restaurant={user.id_restaurante} courier={false} view="deliveries" onSessionExpired={sessionExpired}/>}
-            {current.path === 'demanda' && <Analytics restaurant={user.id_restaurante} view="forecast" onSessionExpired={sessionExpired}/>}
-            {current.path === 'indicadores' && <Analytics restaurant={user.id_restaurante} view="metrics" onSessionExpired={sessionExpired}/>}
+            {user.rol === 'propietario' && current.path === 'demanda' && <Analytics restaurant={user.id_restaurante} view="forecast" onSessionExpired={sessionExpired}/>}
+            {user.rol === 'propietario' && current.path === 'indicadores' && <Analytics restaurant={user.id_restaurante} view="metrics" onSessionExpired={sessionExpired}/>}
           </>}
           {user.rol === 'repartidor' && user.id_restaurante !== null && (current.path === 'entregas' ? <Logistics restaurant={user.id_restaurante} courier view="deliveries" onSessionExpired={sessionExpired}/> : <Couriers restaurant={null} onSessionExpired={sessionExpired}/>)}
           {user.rol === 'cliente' && <Orders restaurant={null} view={current.path === 'menu' ? 'menu' : 'list'} onSessionExpired={sessionExpired}/>}
         </div>
       </main><footer className="workspace-footer"><span>Oliva · Hecho para tu restaurante</span><span>Que sea un buen servicio.</span></footer>
     </div>
-  </div>;
+  </div></QueryClientProvider>;
 }

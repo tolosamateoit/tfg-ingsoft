@@ -88,6 +88,7 @@ def change_preparation(db: Session, user: Usuario, restaurant_id: int, order_id:
         valid = prepared and order.estado in {"En preparación", "Listo"}
     else:
         valid = (order.estado == "Nuevo" and data.estado == "En preparación" and not prepared
+                 or order.estado == 'Nuevo' and data.estado == 'Cancelado' and not prepared
                  or order.estado == "En preparación" and data.estado == "Listo")
     if not valid:
         raise HTTPException(409, "Transición no permitida. Para repetir el consumo usá Nueva preparación explícita.")
@@ -96,7 +97,8 @@ def change_preparation(db: Session, user: Usuario, restaurant_id: int, order_id:
         order.estado = data.estado
         event = HistorialPedido(id_pedido=order_id, id_usuario=user.id_usuario, estado=data.estado,
                                 tipo_evento="nueva_preparacion" if data.nueva_preparacion else "preparacion" if ingredients else "estado",
-                                detalle=data.motivo or "Cambio de estado de preparación.")
+                                detalle=data.motivo or ('Pedido rechazado por el restaurante.' if data.estado == 'Cancelado'
+                                                        else "Cambio de estado de preparación."))
         db.add(event)
         db.flush()
         for ingredient in ingredients:

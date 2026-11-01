@@ -1,3 +1,4 @@
+import { formatDateTime } from '../services/format';
 import { useState, type FormEvent } from 'react';
 import { operationRequest } from '../services/operations';
 import { OrderError } from '../services/orders';
@@ -37,7 +38,7 @@ export default function AccountSupport({ onSessionExpired }: { onSessionExpired:
         <dt>Restaurante asociado</dt><dd>{data.id_restaurante ?? 'Sin restaurante asociado'}</dd>
         <dt>Pertenencia requerida por el rol</dt><dd>{data.pertenencia_configurada ? 'Configuración válida' : 'Falta restaurante asociado'}</dd>
         <dt>Perfil operativo</dt><dd>{data.perfil_operativo_completo ? 'Completo o no requerido' : 'Falta el perfil de cliente o repartidor'}</dd>
-        <dt>Bloqueo temporal</dt><dd>{data.bloqueo_temporal && data.bloqueado_hasta ? `Bloqueada hasta ${new Date(data.bloqueado_hasta).toLocaleString('es-AR')}` : 'Sin bloqueo vigente'}</dd>
+        <dt>Bloqueo temporal</dt><dd>{data.bloqueo_temporal && data.bloqueado_hasta ? `Bloqueada hasta ${formatDateTime(data.bloqueado_hasta)}` : 'Sin bloqueo vigente'}</dd>
         <dt>Condiciones de acceso</dt><dd>{data.acceso_habilitado ? 'Habilitadas; se requiere una contraseña válida' : 'La cuenta no cumple las condiciones para iniciar sesión'}</dd>
       </dl>
     </article>}

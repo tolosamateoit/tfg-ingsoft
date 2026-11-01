@@ -60,7 +60,7 @@ class MenuApiTests(unittest.TestCase):
         self.assertEqual([row["id_producto"] for row in response.json()], [1])
         supplies = self.client.get(f"{BASE}/insumos")
         self.assertEqual({row["id_insumo"] for row in supplies.json()}, {1, 2})
-        self.assertTrue(all(set(row) == {"id_insumo", "nombre", "unidad"} for row in supplies.json()))
+        self.assertTrue(all(set(row) == {"id_insumo", "nombre", "unidad", "stock_actual", "costo_unitario"} for row in supplies.json()))
 
     def test_create_and_edit_product_with_separate_price_and_cost(self):
         response = self.client.post(f"{BASE}/productos", headers=HEADERS, json=PRODUCT)

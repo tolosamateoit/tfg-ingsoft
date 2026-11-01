@@ -84,8 +84,8 @@ class PriorityTests(unittest.TestCase):
             # 30 segundos más antiguo, mismo minuto completo y misma prioridad.
             first = db.get(Pedido, 1)
             first.fecha_hora = datetime(2020, 1, 1, 0, 0, 30, tzinfo=UTC)
-            oldest = add_order(db, fecha_hora=datetime(2020, 1, 1, tzinfo=UTC))
-            same = add_order(db, fecha_hora=oldest.fecha_hora)
+            oldest = add_order(db, estado="Nuevo", fecha_hora=datetime(2020, 1, 1, tzinfo=UTC))
+            same = add_order(db, estado="Nuevo", fecha_hora=oldest.fecha_hora)
             expected = [oldest.id_pedido, same.id_pedido, 1]
             db.commit()
         response = self.client.post(BASE + "/prioridades", headers=HEADERS)
@@ -146,7 +146,8 @@ class DeliveryTests(unittest.TestCase):
             db.commit()
         def first():
             with Session(self.engine) as db:
-                return ranked_couriers(db, 1)[0][0].id_repartidor
+                rows = ranked_couriers(db, 1)
+                return rows[0][0].id_repartidor if rows else None
         self.assertEqual(first(), 3)
         self.make_delivery(state="Entregado")
         self.assertEqual(first(), 1)
@@ -159,7 +160,7 @@ class DeliveryTests(unittest.TestCase):
         with Session(self.engine) as db:
             db.get(Usuario, 9).activo = False
             db.commit()
-        self.assertEqual(first(), 1)
+        self.assertIsNone(first())
 
     def test_tracking_ownership_delivery_transitions_and_courier_release(self):
         delivery = self.make_delivery()
@@ -186,9 +187,9 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 1)
 
-    def test_staff_cannot_change_delivery_and_distances_lock_after_assignment(self):
+    def test_staff_manages_delivery_and_distances_lock_after_assignment(self):
         delivery = self.make_delivery()
-        self.assertEqual(self.client.put(f"/api/entregas/{delivery}/estado", headers=HEADERS, json={"estado": "En camino"}).status_code, 403)
+        self.assertEqual(self.client.put(f"/api/entregas/{delivery}/estado", headers=HEADERS, json={"estado": "En camino"}).status_code, 200)
         self.assertEqual(self.client.put(BASE + "/pedidos/1/distancia", headers=HEADERS, json={"distancia_km": "3"}).status_code, 409)
         self.sign_in(2)
         self.assertEqual(self.client.get("/api/entregas").json(), [])
@@ -231,7 +232,7 @@ class AssignmentTests(unittest.TestCase):
     def assign(self):
         return self.client.post(BASE + "/entregas/asignar", headers=HEADERS)
 
-    def test_assignment_recalculates_priority_persists_exact_cost_and_is_not_duplicated(self):
+    def test_assignment_uses_ready_queue_persists_exact_cost_and_is_not_duplicated(self):
         with Session(self.engine) as db:
             order = db.get(Pedido, 1)
             order.estado = "Listo"
@@ -244,7 +245,7 @@ class AssignmentTests(unittest.TestCase):
             db.commit()
         response = self.assign()
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual([row["id_pedido"] for row in response.json()["entregas"]], [important_id, 1])
+        self.assertEqual([row["id_pedido"] for row in response.json()["entregas"]], [1, important_id])
         self.assertEqual([row["id_repartidor"] for row in response.json()["entregas"]], [1, 3])
         self.assertEqual(response.json()["pendientes"], 0)
         self.assertEqual(self.assign().json(), {"entregas": [], "pendientes": 0})

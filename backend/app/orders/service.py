@@ -6,8 +6,12 @@ from fastapi import HTTPException
 from sqlalchemy import exists, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from app.auth.service import as_utc
+from app.orders.operational_date import operational_date, operational_day_bounds
+from app.orders.summaries import summary_data
+from app.orders.distance import unconfirmed_distances
 
-from app.db.models import Cliente, DetallePedido, HistorialPedido, Pedido, Producto, Repartidor, Restaurante, Usuario
+from app.db.models import Cliente, DetallePedido, Entrega, HistorialPedido, Pedido, Producto, Repartidor, Restaurante, Usuario
 from app.orders.schemas import (
     CustomerMenuOutput, MenuItemOutput, OrderItemOutput, OrderOutput, OrderPage,
     OrderSummary, RestaurantOutput, OrderInput,
@@ -20,6 +24,14 @@ def lock_order_relations(db: Session):
 
 
 def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInput) -> OrderOutput:
+    if user.rol not in {"cliente", "personal", "propietario"} or (
+        user.rol != "cliente" and user.id_restaurante != restaurant_id
+    ):
+        raise HTTPException(403, "No tenés permiso para registrar pedidos en este restaurante.")
+    if user.rol == "cliente" and data.correo_cliente is not None:
+        raise HTTPException(422, "El cliente del pedido se obtiene de tu sesión.")
+    if user.rol != "cliente" and not data.correo_cliente:
+        raise HTTPException(422, "Ingresá el correo del cliente.")
     lock_order_relations(db)
     restaurant = db.scalar(select(Restaurante).where(Restaurante.id_restaurante == restaurant_id)
                            .with_for_update(read=True))
@@ -27,12 +39,15 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
         raise HTTPException(409, "El restaurante debe estar abierto para confirmar el pedido.")
     courier = db.execute(select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
                          .where(Usuario.id_restaurante == restaurant_id, Usuario.activo.is_(True),
-                                Usuario.rol == "repartidor", Repartidor.estado_disponibilidad == "Disponible")
+                                Usuario.rol == "repartidor", Repartidor.estado_disponibilidad == "Disponible",
+                                ~exists(select(Entrega.id_entrega).where(Entrega.id_repartidor == Repartidor.id_repartidor,
+                                                                       Entrega.estado.in_(['Asignado', 'En camino', 'asignada']))))
                          .order_by(Repartidor.id_repartidor).limit(1).with_for_update(read=True)).first()
     if courier is None:
         raise HTTPException(409, "No hay repartidores disponibles en este restaurante.")
     client = db.scalar(select(Cliente).join(Usuario, Usuario.id_usuario == Cliente.id_usuario)
-                       .where(func.lower(Usuario.correo) == data.correo_cliente.lower(),
+                       .where(Usuario.id_usuario == user.id_usuario if user.rol == "cliente"
+                              else func.lower(Usuario.correo) == data.correo_cliente.lower(),
                               Usuario.rol == "cliente", Usuario.activo.is_(True)).with_for_update(read=True))
     if client is None:
         raise HTTPException(422, "Ingresá el correo de una cuenta de cliente activa y precargada.")
@@ -60,7 +75,7 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
                                  cantidad=item.cantidad, precio_unitario=by_id[item.id_producto].precio)
                     for item in data.detalles])
         db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario,
-                              tipo_evento="registro", estado="Nuevo", detalle="Registro del pedido."))
+                              tipo_evento="registro", estado="Nuevo", detalle=f'Registro del pedido. Distancia: {data.distancia_km} km.'))
         db.flush()
         result = read_order(db, user, order.id_pedido)
         db.commit()
@@ -73,7 +88,9 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
 def courier_available(restaurant_id):
     return exists(select(Repartidor.id_repartidor).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
                   .where(Usuario.id_restaurante == restaurant_id, Usuario.activo.is_(True),
-                         Usuario.rol == "repartidor", Repartidor.estado_disponibilidad == "Disponible"))
+                         Usuario.rol == "repartidor", Repartidor.estado_disponibilidad == "Disponible",
+                         ~exists(select(Entrega.id_entrega).where(Entrega.id_repartidor == Repartidor.id_repartidor,
+                                                                Entrega.estado.in_(['Asignado', 'En camino', 'asignada'])))))
 
 
 def customer_restaurants(db: Session) -> list[RestaurantOutput]:
@@ -89,7 +106,7 @@ def customer_menu(db: Session, restaurant_id: int) -> CustomerMenuOutput:
                      .where(Restaurante.id_restaurante == restaurant_id)).mappings().first()
     if row is None:
         raise HTTPException(404, "Restaurante no disponible.")
-    products = db.execute(select(Producto.id_producto, Producto.nombre, Producto.precio)
+    products = db.execute(select(Producto.id_producto, Producto.nombre, Producto.precio, Producto.descripcion, Producto.imagen_url)
                           .where(Producto.id_restaurante == restaurant_id, Producto.activo.is_(True))
                           .order_by(Producto.nombre, Producto.id_producto)).mappings()
     return CustomerMenuOutput(restaurante=RestaurantOutput(**row),
@@ -105,21 +122,46 @@ def scoped_orders(user: Usuario):
     raise HTTPException(403, "No tenés permiso para consultar pedidos.")
 
 
-def order_summary(order: Pedido, restaurant: str, client: str) -> OrderSummary:
+def order_summary(order: Pedido, restaurant: str, client: str, state_since=None) -> OrderSummary:
     return OrderSummary(id_pedido=order.id_pedido, id_restaurante=order.id_restaurante,
-                        restaurante=restaurant, cliente=client, fecha_hora=order.fecha_hora,
+                        restaurante=restaurant, cliente=client, fecha_hora=as_utc(order.fecha_hora),
                         estado=order.estado, importe_total=order.importe_total,
-                        medio_pago=order.medio_pago, estado_pago=order.estado_pago)
+                        medio_pago=order.medio_pago, estado_pago=order.estado_pago,
+                        estado_desde=as_utc(state_since or order.fecha_hora))
 
 
-def list_orders(db: Session, user: Usuario, limit: int, offset: int) -> OrderPage:
+def state_since_query():
+    return select(func.max(HistorialPedido.fecha_hora)).where(
+        HistorialPedido.id_pedido == Pedido.id_pedido, HistorialPedido.estado == Pedido.estado,
+        HistorialPedido.tipo_evento != "distancia",
+    ).correlate(Pedido).scalar_subquery()
+
+
+def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: str = "historial") -> OrderPage:
     scoped = scoped_orders(user)
+    if periodo not in {"dia", "historial"}:
+        raise HTTPException(422, "Período inválido.")
+    reference = operational_date(db, user.id_restaurante) if user.rol in {"personal", "propietario"} else None
+    if periodo == "dia":
+        if user.rol not in {"personal", "propietario"}:
+            raise HTTPException(403, "La fecha operativa requiere el contexto del restaurante.")
+        if reference is None:
+            scoped = scoped.where(False)
+        else:
+            start, end = operational_day_bounds(reference)
+            scoped = scoped.where(Pedido.fecha_hora >= start, Pedido.fecha_hora < end)
     total = db.scalar(select(func.count()).select_from(scoped.subquery()))
-    rows = db.execute(scoped.add_columns(Restaurante.nombre, Cliente.nombre)
+    rows = db.execute(scoped.add_columns(Restaurante.nombre, Cliente.nombre, state_since_query())
                       .join(Restaurante, Restaurante.id_restaurante == Pedido.id_restaurante)
                       .order_by(Pedido.fecha_hora.desc(), Pedido.id_pedido.desc()).limit(limit).offset(offset)).all()
-    return OrderPage(pedidos=[order_summary(order, restaurant, client) for order, restaurant, client in rows],
-                     total=total, limit=limit, offset=offset)
+    extra = summary_data(db, [row[0].id_pedido for row in rows])
+    from app.analytics.operational import owner_order_warnings
+    warnings = owner_order_warnings(db, user, [row[0].id_pedido for row in rows], reference_day=reference)
+    for oid, warning in warnings.items():
+        extra[oid].update(warning)
+    return OrderPage(pedidos=[order_summary(order, restaurant, client, since).model_copy(update=extra[order.id_pedido])
+                             for order, restaurant, client, since in rows],
+                     total=total, limit=limit, offset=offset, fecha_operativa=reference, periodo=periodo)
 
 
 def read_order(db: Session, user: Usuario, order_id: int) -> OrderOutput:
@@ -134,8 +176,32 @@ def read_order(db: Session, user: Usuario, order_id: int) -> OrderOutput:
                          .join(Producto, Producto.id_producto == DetallePedido.id_producto)
                          .where(DetallePedido.id_pedido == order_id)
                          .order_by(DetallePedido.id_detalle)).mappings()
-    return OrderOutput(**order_summary(order, restaurant, client).model_dump(),
+    history = db.scalars(select(HistorialPedido).where(HistorialPedido.id_pedido == order_id)
+                         .order_by(HistorialPedido.fecha_hora, HistorialPedido.id_historial)).all()
+    from app.orders.timing import order_times
+    since, preparation_time, delivery_time = order_times(order, history)
+    economy = None
+    known_distance = order_id not in unconfirmed_distances(db, [order_id])
+    if user.rol == "propietario" and known_distance:
+        from app.logistics.service import delivery_cost
+        from app.db.models import Entrega
+        rates = db.get(Restaurante, order.id_restaurante)
+        delivery = db.scalar(select(Entrega).where(Entrega.id_pedido == order_id))
+        estimated = delivery_cost(rates, order)
+        economy = {key: format(value, ".2f") for key, value in {
+            "importe_productos": order.importe_total, "costo_productos": order.costo_total,
+            "costo_fijo_entrega": rates.costo_fijo_entrega, "costo_por_km": rates.costo_por_km,
+            "componente_km": rates.costo_por_km * order.distancia_km,
+            "costo_entrega": estimated, "margen_estimado": order.importe_total - order.costo_total - estimated,
+        }.items()}
+        if delivery:
+            economy["costo_entrega_asignado"] = format(delivery.costo_repartidor, ".2f")
+    summary = order_summary(order, restaurant, client, since).model_copy(update=summary_data(db, [order_id])[order_id])
+    from app.analytics.operational import owner_order_warnings
+    summary = summary.model_copy(update=owner_order_warnings(db, user, [order_id]).get(order_id, {}))
+    return OrderOutput(**summary.model_dump(),
                        direccion_entrega=order.direccion_entrega, referencia_local=order.referencia_local,
-                       zona_entrega=order.zona_entrega, distancia_km=order.distancia_km,
+                       zona_entrega=order.zona_entrega, distancia_km=order.distancia_km if known_distance else None,
+                       preparacion_minutos=preparation_time, entrega_minutos=delivery_time, economia=economy,
                        detalles=[OrderItemOutput(**detail, subtotal=detail["precio_unitario"] * detail["cantidad"])
                                  for detail in details])

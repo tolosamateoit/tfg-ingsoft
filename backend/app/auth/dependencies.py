@@ -16,7 +16,17 @@ from app.auth.service import as_utc, utc_now, valid_user
 from app.db.models import Cliente, Entrega, Pedido, Repartidor, Usuario
 
 COOKIE_NAME = "tfg_session"
+TAB_HEADER = "X-Oliva-Tab"
 DB = Annotated[Session, Depends(get_db)]
+
+
+def session_cookie_name(request: Request) -> str:
+    tab = request.headers.get(TAB_HEADER)
+    if tab is None:
+        return COOKIE_NAME  # Compatibilidad con los clientes existentes de la API.
+    if not re.fullmatch(r"[a-f0-9]{32}", tab):
+        raise HTTPException(401, "Necesitás iniciar sesión.")
+    return f"{COOKIE_NAME}_{tab}"
 
 
 def auth_settings() -> AuthSettings:
@@ -43,7 +53,7 @@ def current_identity(request: Request, db: DB,
                      settings: Annotated[AuthSettings, Depends(auth_settings)]) -> Identity:
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         protect_mutation(request, settings)
-    token = request.cookies.get(COOKIE_NAME, "")
+    token = request.cookies.get(session_cookie_name(request), "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
         raise HTTPException(401, "Necesitás iniciar sesión.")
     row = db.execute(

@@ -2,8 +2,9 @@
 
 from decimal import Decimal
 from typing import Annotated
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_serializer, field_validator, model_validator
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=18, decimal_places=2, allow_inf_nan=False)]
 Quantity = Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=6, allow_inf_nan=False)]
@@ -18,6 +19,28 @@ class ProductInput(InputModel):
     precio: Money
     costo_unitario: Money
     activo: StrictBool
+    descripcion: str | None = Field(default=None, max_length=1000)
+    imagen_url: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("descripcion", "imagen_url")
+    @classmethod
+    def empty_as_none(cls, value):
+        return value or None
+
+    @field_validator("imagen_url")
+    @classmethod
+    def valid_image_url(cls, value):
+        if value is None:
+            return value
+        parsed = urlsplit(value)
+        if (any(char.isspace() for char in value) or "\\" in value or any(ord(c) < 32 for c in value)
+                or parsed.username or parsed.password):
+            raise ValueError("URL de imagen inválida.")
+        if parsed.scheme in {"http", "https"} and parsed.hostname:
+            return value
+        if not parsed.scheme and not parsed.netloc and parsed.path.startswith("/images/") and ".." not in parsed.path:
+            return value
+        raise ValueError("Usá una URL http/https o una ruta dentro de /images/.")
 
 
 class ProductOutput(ProductInput):
@@ -35,6 +58,8 @@ class IngredientOutput(BaseModel):
     id_insumo: int
     nombre: str
     unidad: str
+    stock_actual: Decimal
+    costo_unitario: Decimal
 
 
 class RecipeItemInput(InputModel):

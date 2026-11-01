@@ -2,7 +2,7 @@ import type { Plugin } from 'vite';
 
 // Exclusivo del servidor de desarrollo. Estas variables nunca se envían a React.
 export function localAccess(env: Record<string, string>): Plugin {
-  const roles = ['propietario', 'personal', 'repartidor'];
+  const roles = ['propietario', 'personal', 'repartidor', 'cliente'];
   return {
     name: 'private-local-account-access', apply: 'serve',
     configureServer(server) {
@@ -11,10 +11,12 @@ export function localAccess(env: Record<string, string>): Plugin {
         if (req.url !== '/api/auth/login' || !role) return next();
         const host = req.headers.host ?? '';
         const origin = req.headers.origin;
+        const tab = req.headers['x-oliva-tab'];
         const localHost = /^(127\.0\.0\.[12]|localhost|\[::1\]):\d+$/.test(host);
         const localPeer = /^(::ffff:)?127\./.test(req.socket.remoteAddress ?? '') || req.socket.remoteAddress === '::1';
         if (req.method !== 'POST' || !localHost || !localPeer || origin !== `http://${host}`
-            || req.headers['x-csrf-protection'] !== '1' || typeof role !== 'string' || !roles.includes(role)) {
+            || req.headers['x-csrf-protection'] !== '1' || typeof role !== 'string' || !roles.includes(role)
+            || (tab !== undefined && (typeof tab !== 'string' || !/^[a-f0-9]{32}$/.test(tab)))) {
           res.writeHead(403, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ detail: 'Acceso local no permitido.' }));
         }
@@ -31,7 +33,7 @@ export function localAccess(env: Record<string, string>): Plugin {
           if (typeof backend !== 'string') throw new Error('Missing local proxy');
           const response = await fetch(`${backend}/api/auth/login`, {
             method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12000),
-            headers: { 'Content-Type': 'application/json', Origin: origin, 'X-CSRF-Protection': '1' },
+            headers: { 'Content-Type': 'application/json', Origin: origin, 'X-CSRF-Protection': '1', ...(typeof tab === 'string' ? { 'X-Oliva-Tab': tab } : {}) },
             body: JSON.stringify({ correo, contrasena }),
           });
           res.statusCode = response.status;

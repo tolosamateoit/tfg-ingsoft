@@ -35,9 +35,10 @@ def main():
         subprocess.run([
             "docker", "run", "--detach", "--rm", "--name", container,
             "--label", "tfg.test=hu01", "--publish", f"127.0.0.1:{port}:5432",
-            "--tmpfs", "/var/lib/postgresql/data:rw,size=256m", "--memory", "512m",
+            # La suite incluye importaciones/reinicios de 90 días: el WAL también ocupa tmpfs.
+            "--tmpfs", "/var/lib/postgresql/data:rw,size=1024m", "--memory", "1536m",
             "--env", "POSTGRES_PASSWORD", "--env", "POSTGRES_USER", "--env", "POSTGRES_DB",
-            "postgres:17",
+            "postgres:17", "-c", "max_wal_size=256MB",
         ], check=True, env=environment, stdout=subprocess.DEVNULL)
         started = True
         connection_args = dict(host="127.0.0.1", hostaddr="127.0.0.1", port=port,

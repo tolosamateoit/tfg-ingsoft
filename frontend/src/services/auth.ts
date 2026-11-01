@@ -1,3 +1,4 @@
+import { sessionHeaders } from './session';
 export type User = {
   id_usuario: number;
   nombre: string;
@@ -14,7 +15,7 @@ async function request(path: string, body?: object, signal?: AbortSignal) {
   const response = await fetch(`/api/auth/${path}`, {
     method: body ? 'POST' : 'GET',
     credentials: 'same-origin',
-    headers: body ? { 'Content-Type': 'application/json', 'X-CSRF-Protection': '1' } : {},
+    headers: await sessionHeaders(Boolean(body)),
     body: body ? JSON.stringify(body) : undefined,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     cache: 'no-store',
@@ -49,7 +50,7 @@ export async function login(correo: string, contrasena: string): Promise<User> {
 export async function localAccountLogin(role: string): Promise<User> {
   if (!import.meta.env.DEV || !__LOCAL_ACCOUNT_ACCESS__) throw new AuthError(403, 'Acceso no disponible.');
   const response = await fetch('/api/auth/login', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Protection': '1', 'X-Local-Account': role },
+    headers: { ...await sessionHeaders(true), 'X-Local-Account': role },
     body: '{}', signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new AuthError(response.status, response.status === 401
     ? 'No se pudo ingresar. Comprobá la cuenta o esperá a que finalice el bloqueo temporal.'

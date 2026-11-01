@@ -13,6 +13,18 @@ BASE = "/api/restaurantes/1"
 
 
 class DashboardTests(unittest.TestCase):
+    def test_ready_and_delivery_orders_are_counted_but_not_ranked(self):
+        from tests.test_logistics import add_order
+        with Session(self.engine) as db:
+            for state in ('En preparación', 'Listo', 'Asignado', 'En camino'):
+                add_order(db, estado=state)
+            db.commit()
+        response = self.dashboard()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['pedidos_por_estado'], {
+            'Nuevo': 1, 'En preparación': 1, 'Listo': 1, 'Asignado': 1, 'En camino': 1})
+        self.assertEqual({r['estado'] for r in response.json()['prioridades']['pedidos']}, {'Nuevo', 'En preparación'})
+
     def setUp(self):
         test_analytics.ForecastTests.setUp(self)
         lock = patch("app.logistics.priority.lock_order_relations")
@@ -60,7 +72,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIsNone(response.json()["indicadores"])
         self.assertIsNone(response.json()["prediccion_guardada"])
-        self.assertEqual([row["tipo"] for row in response.json()["alertas_activas"]], ["stock"])
+        self.assertEqual(response.json()["alertas_activas"], [])
         self.assertNotIn("Importe privado", response.text)
         self.assertEqual(self.dashboard("/api/restaurantes/2").status_code, 403)
         self.sign_in(2)

@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Path, Query
 
 from app.auth.dependencies import CurrentUser, DB, require_restaurant, require_roles
 from app.db.models import Usuario
-from app.logistics.priority import priorities
-from app.logistics.schemas import AssignmentOutput, DeliveryOutput, DeliveryStateInput, DistanceInput, PriorityPage, TrackingOutput
+from app.logistics.priority import priorities, priority_preview
+from app.logistics.schemas import AssignmentInput, AssignmentOutput, DeliveryOutput, DeliveryStateInput, DistanceInput, PriorityPage, TrackingOutput
 from app.logistics.service import assign_ready_orders, change_delivery_state, change_distance, deliveries, tracking
 
 router = APIRouter(tags=["Prioridad y entregas"])
@@ -16,13 +16,26 @@ PositiveId = Annotated[int, Path(gt=0)]
 
 
 @router.post("/restaurantes/{id_restaurante}/entregas/asignar", response_model=AssignmentOutput)
-def assign_deliveries(id_restaurante: PositiveId, db: DB, user: Staff):
-    return assign_ready_orders(db, user, id_restaurante)
+def assign_deliveries(id_restaurante: PositiveId, db: DB, user: Staff, selection: AssignmentInput | None = None):
+    return assign_ready_orders(db, user, id_restaurante, selection)
+
+
+@router.get('/restaurantes/{id_restaurante}/prioridades', response_model=PriorityPage)
+def live_priorities(id_restaurante: PositiveId, db: DB, user: Staff):
+    return priority_warnings(db, user, priority_preview(db, id_restaurante))
+
+
+def priority_warnings(db, user, result):
+    from app.analytics.operational import owner_order_warnings
+    warnings = owner_order_warnings(db, user, [row.id_pedido for row in result.pedidos])
+    for row in result.pedidos:
+        row.advertencia_importe = warnings.get(row.id_pedido, {}).get('advertencia_importe')
+    return result
 
 
 @router.post("/restaurantes/{id_restaurante}/prioridades", response_model=PriorityPage)
 def recalculate(id_restaurante: PositiveId, db: DB, user: Staff):
-    return priorities(db, id_restaurante)
+    return priority_warnings(db, user, priorities(db, id_restaurante))
 
 
 @router.put("/restaurantes/{id_restaurante}/pedidos/{id_pedido}/distancia", response_model=TrackingOutput)
@@ -41,5 +54,5 @@ def list_deliveries(db: DB, user: DeliveryReader, offset: Annotated[int, Query(g
 
 
 @router.put("/entregas/{id_entrega}/estado", response_model=TrackingOutput)
-def update_delivery(id_entrega: PositiveId, data: DeliveryStateInput, db: DB, user: Courier):
+def update_delivery(id_entrega: PositiveId, data: DeliveryStateInput, db: DB, user: DeliveryReader):
     return change_delivery_state(db, user, id_entrega, data)

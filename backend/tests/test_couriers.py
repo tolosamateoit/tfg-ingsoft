@@ -71,6 +71,9 @@ class CourierTests(unittest.TestCase):
         own = self.client.get("/api/repartidores/me")
         self.assertEqual([row["id_repartidor"] for row in own.json()["repartidores"]], [1])
         response = self.client.put("/api/repartidores/me", headers=HEADERS, json={"estado_disponibilidad": "Disponible"})
+        self.assertEqual(response.status_code, 409, response.text)  # tiene una entrega activa
+        self.sign_in(9)
+        response = self.client.put("/api/repartidores/me", headers=HEADERS, json={"estado_disponibilidad": "Disponible"})
         self.assertEqual(response.status_code, 200, response.text)
         self.sign_in(3)
         self.assertTrue(self.client.get("/api/restaurantes/1/menu").json()["restaurante"]["delivery_disponible"])

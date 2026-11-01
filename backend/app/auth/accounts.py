@@ -20,12 +20,15 @@ def demo_sql(password: str) -> str:
         ("administrador", "administrador_plataforma", "NULL"),
     ]
     statements = []
+    names = {"personal1": "Martín Acosta", "personal2": "Sofía Torres", "propietario1": "Lucía Fernández",
+             "propietario2": "Gabriel Herrera", "cliente1": "Valentina López", "cliente2": "Joaquín Pérez",
+             "repartidor1": "Diego Ramírez", "repartidor2": "Bruno Castro", "administrador": "Carolina Méndez"}
     for name, role, restaurant in accounts:
         # Una sal diferente por cuenta, incluso cuando usan la misma clave de demo.
         encoded = hash_password(password)
         statements.append(
             "    INSERT INTO public.usuario (id_restaurante, correo, nombre, hash_contrasena, rol, activo) "
-            f"VALUES ({restaurant}, '{name}@demo.invalid', 'Sintético {name}', '{encoded}', '{role}', true);"
+            f"VALUES ({restaurant}, '{name}@demo.invalid', '{names[name]}', '{encoded}', '{role}', true);"
         )
         if role == "cliente":
             statements.append(
@@ -51,9 +54,9 @@ BEGIN
         RAISE EXCEPTION 'Ya existen cuentas sintéticas HU-01; no se sobrescribieron';
     END IF;
     INSERT INTO public.restaurante (nombre,direccion,horario_atencion,abierto,costo_fijo_entrega,costo_por_km)
-        VALUES ('Restaurante sintético 1','Dirección sintética 1','Demo',true,0,0) RETURNING id_restaurante INTO r1;
+        VALUES ('Rotisería del Pueblo','Belgrano 420','11:00 a 23:00',true,0,0) RETURNING id_restaurante INTO r1;
     INSERT INTO public.restaurante (nombre,direccion,horario_atencion,abierto,costo_fijo_entrega,costo_por_km)
-        VALUES ('Restaurante sintético 2','Dirección sintética 2','Demo',true,0,0) RETURNING id_restaurante INTO r2;
+        VALUES ('La Esquina de Julia','San Martín 875','11:00 a 23:00',true,0,0) RETURNING id_restaurante INTO r2;
 """ + "\n".join(statements) + "\nEND;\n$demo$;\nCOMMIT;\n"
 
 

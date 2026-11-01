@@ -1,6 +1,6 @@
 """DTO de consulta: el cliente no recibe costos internos ni datos de otros usuarios."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
@@ -15,12 +15,12 @@ class OrderItemInput(BaseModel):
 
 class OrderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    correo_cliente: str = Field(min_length=3, max_length=254)
+    correo_cliente: str | None = Field(default=None, min_length=3, max_length=254)
     direccion_entrega: str = Field(min_length=1, max_length=500)
     referencia_local: str | None = Field(default=None, max_length=500)
     zona_entrega: str | None = Field(default=None, max_length=150)
     medio_pago: str = Field(min_length=1, max_length=50)
-    distancia_km: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=3, allow_inf_nan=False)]
+    distancia_km: Annotated[Decimal, Field(ge=0, le=5, max_digits=12, decimal_places=3, allow_inf_nan=False)]
     detalles: list[OrderItemInput] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
@@ -41,6 +41,8 @@ class MenuItemOutput(BaseModel):
     id_producto: int
     nombre: str
     precio: Decimal
+    descripcion: str | None = None
+    imagen_url: str | None = None
 
     @field_serializer("precio")
     def money_as_text(self, value: Decimal) -> str:
@@ -62,6 +64,14 @@ class OrderSummary(BaseModel):
     importe_total: Decimal
     medio_pago: str
     estado_pago: str
+    estado_desde: datetime
+    resumen_productos: str = ""
+    id_entrega: int | None = None
+    id_repartidor: int | None = None
+    repartidor: str | None = None
+    estado_entrega: str | None = None
+    advertencia_importe: str | None = None
+    advertencia_entrega: str | None = None
 
     @field_serializer("importe_total")
     def money_as_text(self, value: Decimal) -> str:
@@ -84,8 +94,15 @@ class OrderOutput(OrderSummary):
     direccion_entrega: str
     referencia_local: str | None
     zona_entrega: str | None
-    distancia_km: Decimal
+    distancia_km: Decimal | None
     detalles: list[OrderItemOutput]
+    preparacion_minutos: Decimal | None = None
+    entrega_minutos: Decimal | None = None
+    economia: dict[str, str] | None = None
+
+    @field_serializer("distancia_km")
+    def distance_as_text(self, value: Decimal | None) -> str | None:
+        return format(value, ".2f") if value is not None else None
 
 
 class OrderPage(BaseModel):
@@ -93,3 +110,5 @@ class OrderPage(BaseModel):
     total: int
     limit: int
     offset: int
+    fecha_operativa: date | None = None
+    periodo: str = "historial"

@@ -2,12 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.auth.config import AuthSettings
 from app.auth.dependencies import (
-    COOKIE_NAME, DB, CurrentUser, Identity, auth_settings, current_identity, protect_mutation,
+    DB, CurrentUser, Identity, auth_settings, current_identity, protect_mutation, session_cookie_name,
 )
 from app.auth.security import normalize_email
 from app.auth.service import SESSION_TTL, login
@@ -40,13 +40,14 @@ def public_user(user) -> UserOutput:
 
 
 @router.post("/login", response_model=UserOutput, dependencies=[Depends(protect_mutation)])
-def sign_in(data: LoginInput, response: Response, db: DB,
+def sign_in(data: LoginInput, request: Request, response: Response, db: DB,
             settings: Annotated[AuthSettings, Depends(auth_settings)]):
+    cookie_name = session_cookie_name(request)
     result = login(db, data.correo, data.contrasena.get_secret_value())
     if result is None:
         raise HTTPException(401, LOGIN_ERROR)
     user, token = result
-    response.set_cookie(COOKIE_NAME, token, max_age=int(SESSION_TTL.total_seconds()),
+    response.set_cookie(cookie_name, token, max_age=int(SESSION_TTL.total_seconds()),
                         httponly=True, secure=settings.cookie_secure, samesite="lax", path="/api")
     return public_user(user)
 
@@ -57,9 +58,9 @@ def me(user: CurrentUser):
 
 
 @router.post("/logout", status_code=204, dependencies=[Depends(protect_mutation)])
-def sign_out(response: Response, db: DB, identity: Annotated[Identity, Depends(current_identity)],
+def sign_out(request: Request, response: Response, db: DB, identity: Annotated[Identity, Depends(current_identity)],
              settings: Annotated[AuthSettings, Depends(auth_settings)]):
     db.delete(identity.session)
     db.commit()
-    response.delete_cookie(COOKIE_NAME, path="/api", httponly=True,
+    response.delete_cookie(session_cookie_name(request), path="/api", httponly=True,
                            secure=settings.cookie_secure, samesite="lax")

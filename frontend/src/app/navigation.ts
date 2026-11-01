@@ -1,14 +1,14 @@
 import type { User } from '../services/auth';
 export type Page = { path: string; label: string; icon: string; group: string; description: string };
 const operations: Page[] = [
-  { path: 'resumen', label: 'Resumen', icon: 'grid', group: 'Principal', description: 'Todo lo que pasa en tu restaurante, en un solo lugar.' },
   { path: 'pedidos', label: 'Pedidos', icon: 'orders', group: 'Operación', description: 'Del primer ingrediente a la última entrega.' },
   { path: 'catalogo', label: 'Menú y recetas', icon: 'food', group: 'Operación', description: 'La carta de tu restaurante, siempre al día.' },
-  { path: 'prioridades', label: 'Prioridades', icon: 'chart', group: 'Operación', description: 'Organizá la atención de cada pedido.' },
+  { path: 'stock', label: 'Insumos y stock', icon: 'food', group: 'Operación', description: 'Existencias y movimientos de los insumos de tu cocina.' },
   { path: 'entregas', label: 'Entregas', icon: 'truck', group: 'Operación', description: 'Asigná, acompañá y consultá cada recorrido.' },
   { path: 'repartidores', label: 'Repartidores', icon: 'people', group: 'Operación', description: 'Tu equipo de reparto y su disponibilidad.' },
 ];
 export const newOrder: Page = { path: 'nuevo-pedido', label: 'Nuevo pedido', icon: 'plus', group: 'Operación', description: 'Registrá los productos y los datos de entrega.' };
+export const canonicalPath = (path: string) => ['resumen', 'prioridades'].includes(path) ? 'pedidos' : path;
 export function pagesFor(user: User): Page[] {
   if (['propietario', 'personal'].includes(user.rol) && user.id_restaurante !== null) return user.rol === 'propietario' ? [...operations,
     { path: 'demanda', label: 'Previsión de demanda', icon: 'spark', group: 'Análisis', description: 'Anticipá las próximas ventas y las necesidades de tu cocina.' },

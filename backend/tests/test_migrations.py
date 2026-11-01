@@ -41,7 +41,8 @@ class InitialMigrationTests(unittest.TestCase):
         self.assertEqual({name for name, _ in tables}, set(Base.metadata.tables))
         for name, body in tables:
             columns = re.findall(r"^    (\w+) (?:INTEGER|TEXT|BOOLEAN|NUMERIC|DATE|TIMESTAMP|JSONB)\b", body, flags=re.MULTILINE)
-            self.assertEqual(set(columns), set(Base.metadata.tables[name].columns.keys()), name)
+            approved = {"descripcion", "imagen_url"} if name == "producto" else set()
+            self.assertEqual(set(columns), set(Base.metadata.tables[name].columns.keys()) - approved, name)
         self.assertIn("CREATE TABLE public.alembic_version", sql)
         self.assertIn("BEGIN;", sql)
         self.assertTrue(sql.rstrip().endswith("COMMIT;"))

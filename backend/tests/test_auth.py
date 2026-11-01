@@ -303,13 +303,18 @@ class AuthApiTests(unittest.TestCase):
         self.sign_in(8)
         self.assertEqual(self.client.get("/api/test/delivery/1").status_code, 403)
 
-    def test_no_operational_or_recovery_routes_are_published(self):
+    def test_only_approved_routes_are_published(self):
         paths = production_app.openapi()["paths"]
         self.assertEqual(set(paths), {"/api/health", "/api/health/database",
                                      "/api/auth/login", "/api/auth/logout", "/api/auth/me",
                                      "/api/restaurantes/{id_restaurante}/productos",
                                      "/api/restaurantes/{id_restaurante}/productos/{id_producto}",
                                      "/api/restaurantes/{id_restaurante}/insumos",
+                                     "/api/restaurantes/{id_restaurante}/insumos/{id_insumo}",
+                                     "/api/restaurantes/{id_restaurante}/insumos/{id_insumo}/movimientos",
+                                     "/api/restaurantes/{id_restaurante}/movimientos-stock",
+                                     "/api/restaurantes/{id_restaurante}/tarifas",
+                                     "/api/repartidores/me/resumen-diario",
                                      "/api/restaurantes/{id_restaurante}/productos/{id_producto}/receta",
                                      "/api/restaurantes", "/api/restaurantes/{id_restaurante}/menu",
                                      "/api/restaurantes/{id_restaurante}/pedidos",

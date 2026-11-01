@@ -1,3 +1,5 @@
+import { cacheScope, invalidateMutation } from './queryCache';
+import { sessionHeaders } from './session';
 export type Product = {
   id_producto: number;
   id_restaurante: number;
@@ -5,6 +7,8 @@ export type Product = {
   precio: string;
   costo_unitario: string;
   activo: boolean;
+  descripcion: string | null;
+  imagen_url: string | null;
 };
 export type ProductInput = Omit<Product, 'id_producto' | 'id_restaurante'>;
 export type Ingredient = { id_insumo: number; nombre: string; unidad: string };
@@ -16,9 +20,10 @@ export class MenuError extends Error {
 }
 
 async function request<T>(restaurant: number, path: string, method = 'GET', body?: object, signal?: AbortSignal): Promise<T> {
+  const requestScope = cacheScope();
   const response = await fetch(`/api/restaurantes/${restaurant}/${path}`, {
     method, credentials: 'same-origin', cache: 'no-store',
-    headers: body ? { 'Content-Type': 'application/json', 'X-CSRF-Protection': '1' } : {},
+    headers: await sessionHeaders(Boolean(body)),
     body: body ? JSON.stringify(body) : undefined,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   });
@@ -31,7 +36,9 @@ async function request<T>(restaurant: number, path: string, method = 'GET', body
           : response.status === 404 ? 'El producto ya no está disponible en este restaurante.'
             : 'No se pudo completar la operación. Volvé a intentar.');
   }
-  return await response.json() as T;
+  const result = await response.json() as T;
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) await invalidateMutation(`restaurantes/${restaurant}/${path}`, requestScope);
+  return result;
 }
 
 export const listProducts = (restaurant: number, signal?: AbortSignal) => request<Product[]>(restaurant, 'productos', 'GET', undefined, signal);
@@ -41,7 +48,4 @@ export const updateProduct = (restaurant: number, id: number, data: ProductInput
 export const getRecipe = (restaurant: number, id: number, signal?: AbortSignal) => request<Recipe>(restaurant, `productos/${id}/receta`, 'GET', undefined, signal);
 export const saveRecipe = (restaurant: number, id: number, detalles: RecipeItem[]) => request<Recipe>(restaurant, `productos/${id}/receta`, 'PUT', { detalles });
 
-export function formatMoney(value: string): string {
-  const [integer, fraction = ''] = value.split('.');
-  return `$ ${BigInt(integer).toLocaleString('es-AR')},${fraction.padEnd(2, '0')}`;
-}
+export { formatMoney } from './format';

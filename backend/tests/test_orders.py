@@ -17,8 +17,8 @@ from tests.auth_support import HEADERS, PASSWORD, override_database
 from tests.menu_support import sqlite_menu_engine
 
 ORDER = {"correo_cliente": "u3@test.invalid", "direccion_entrega": " Calle de prueba 123 ",
-         "referencia_local": "Puerta verde", "zona_entrega": "Centro", "medio_pago": "efectivo",
-         "distancia_km": "2.345", "detalles": [{"id_producto": 1, "cantidad": 3}]}
+         "referencia_local": "Puerta verde", "zona_entrega": "Centro", "medio_pago": "efectivo", "distancia_km": "2",
+         "detalles": [{"id_producto": 1, "cantidad": 3}]}
 CREATE = "/api/restaurantes/1/pedidos"
 
 
@@ -56,7 +56,7 @@ class OrderReadTests(unittest.TestCase):
         first = self.client.get("/api/restaurantes/1/menu")
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual([p["id_producto"] for p in first.json()["productos"]], [1])
-        self.assertEqual(set(first.json()["productos"][0]), {"id_producto", "nombre", "precio"})
+        self.assertEqual(set(first.json()["productos"][0]), {"id_producto", "nombre", "precio", "descripcion", "imagen_url"})
         self.assertEqual(self.client.get("/api/restaurantes/2/menu").json()["productos"], [])
         self.assertEqual(self.client.get("/api/restaurantes/999/menu").status_code, 404)
 
@@ -76,7 +76,7 @@ class OrderReadTests(unittest.TestCase):
             db.commit()
         restaurants = self.client.get("/api/restaurantes").json()
         self.assertEqual({r["id_restaurante"]: r["delivery_disponible"] for r in restaurants},
-                         {1: False, 2: True})
+                         {1: False, 2: False})  # el otro repartidor también tiene una entrega activa
 
     def test_customer_sees_only_own_orders_across_restaurants(self):
         response = self.client.get("/api/pedidos")
@@ -138,7 +138,8 @@ class OrderReadTests(unittest.TestCase):
         with Session(self.engine) as db:
             order = db.get(Pedido, saved["id_pedido"])
             self.assertEqual(order.costo_total, Decimal("30.00"))
-            self.assertEqual(order.distancia_km, Decimal("2.345"))
+            self.assertEqual(order.distancia_km, Decimal("2"))
+            self.assertEqual(saved["distancia_km"], "2.00")
             self.assertEqual(order.id_cliente, 1)
             self.assertEqual(order.estado, "Nuevo")
             self.assertEqual(order.estado_pago, "pendiente")
@@ -205,9 +206,10 @@ class OrderReadTests(unittest.TestCase):
             with self.subTest(change=change):
                 self.assertEqual(self.post_order({**ORDER, **change}).status_code, 422)
 
-    def test_only_restaurant_staff_can_create_and_csrf_is_required(self):
-        for user in (2, 3, 5, 8):
+    def test_creation_permissions_and_csrf_are_required(self):
+        for user in (2, 5, 8):
             self.assertEqual(self.post_order(user=user).status_code, 403)
+        self.assertEqual(self.post_order(user=3).status_code, 422)  # No puede seleccionar otro cliente por correo.
         self.sign_in(1)
         self.assertEqual(self.client.post(CREATE, json=ORDER).status_code, 403)
         self.assertEqual(self.client.post("/api/restaurantes/2/pedidos", headers=HEADERS, json=ORDER).status_code, 403)

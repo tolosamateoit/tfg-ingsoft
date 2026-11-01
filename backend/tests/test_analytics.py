@@ -23,7 +23,7 @@ TODAY = date(2026, 10, 27)
 BASE = "/api/restaurantes/1"
 
 
-def historical_orders(db, *, days=7, count=10):
+def historical_orders(db, *, days=35, count=70):
     start = datetime.combine(TODAY - timedelta(days=days), datetime.min.time(), UTC)
     rows = []
     for index in range(count):
@@ -34,7 +34,7 @@ def historical_orders(db, *, days=7, count=10):
                        importe_total=100, costo_total=10, distancia_km=1)
         db.add(order); db.flush()
         db.add(DetallePedido(id_pedido=order.id_pedido, id_producto=1, precio_unitario=100,
-                             cantidad=(day + 1) * 4 // copies))
+                             cantidad=(day % 7 + 1) * 4 // copies))
         rows.append(order.id_pedido)
     db.commit()
     return rows
@@ -85,32 +85,32 @@ class ForecastTests(unittest.TestCase):
 
     def test_seven_days_and_nine_orders_are_insufficient(self):
         with Session(self.engine) as db:
-            historical_orders(db, count=9)
+            historical_orders(db, days=7, count=9)
         response = self.generate()
         self.assertEqual(response.json()["estado"], "Historial insuficiente")
         self.assertEqual(response.json()["dias_historial"], 7)
 
     def test_six_days_and_ten_orders_are_insufficient(self):
         with Session(self.engine) as db:
-            historical_orders(db, days=6)
+            historical_orders(db, days=6, count=10)
         self.assertEqual(self.generate().json()["estado"], "Historial insuficiente")
 
-    def test_linear_history_forecast_mae_recipes_shortages_and_persistence(self):
+    def test_weekday_history_forecast_mae_recipes_shortages_and_persistence(self):
         with Session(self.engine) as db:
             historical_orders(db)
         response = self.generate()
         self.assertEqual(response.status_code, 200, response.text)
         data = response.json()
-        self.assertEqual(data["pedidos_completados"], 10)
-        self.assertEqual(data["dias_validacion"], 2)
+        self.assertEqual(data["pedidos_completados"], 70)
+        self.assertEqual(data["dias_validacion"], 7)
         self.assertEqual(len(data["predicciones"]), 1)
         prediction = data["predicciones"][0]
-        self.assertEqual(Decimal(prediction["demanda_estimada"]), 308)
+        self.assertEqual(Decimal(prediction["demanda_estimada"]), 112)
         self.assertEqual(Decimal(prediction["valor_metrica"]), 0)
         self.assertEqual(prediction["nombre_metrica"], "MAE")
         self.assertEqual(prediction["periodo_fin"], "2026-11-02")
-        self.assertEqual(Decimal(data["insumos"][0]["cantidad_necesaria"]), Decimal("61.6"))
-        self.assertEqual(Decimal(data["insumos"][0]["faltante"]), Decimal("41.6"))
+        self.assertEqual(Decimal(data["insumos"][0]["cantidad_necesaria"]), Decimal("22.4"))
+        self.assertEqual(Decimal(data["insumos"][0]["faltante"]), Decimal("2.4"))
         saved = self.client.get(BASE + "/predicciones")
         self.assertEqual(saved.status_code, 200, saved.text)
         self.assertEqual(saved.json()["predicciones"][0]["id_prediccion"], prediction["id_prediccion"])
@@ -129,7 +129,7 @@ class ForecastTests(unittest.TestCase):
             # Picos solo en los días reservados: MAE debe mostrar error real.
             rows = db.scalars(select(DetallePedido).join(Pedido).where(Pedido.id_pedido.in_(ids))).all()
             for row in rows:
-                if row.id_pedido in {ids[5], ids[6]}:
+                if row.id_pedido in set(ids[28:35] + ids[63:70]):
                     row.cantidad = 1000
             db.delete(db.get(RecetaDetalle, (1, 1)))
             db.commit()
@@ -186,7 +186,9 @@ class IndicatorTests(unittest.TestCase):
             db.commit()
         result = self.evaluate().json()
         self.assertEqual(next(row["estado"] for row in result["alertas"] if row["tipo"] == "stock"), "Resuelta")
-        self.assertEqual(len(self.client.get(BASE + "/alertas").json()), 4)
+        page = self.client.get(BASE + "/alertas").json()
+        self.assertEqual(page["total"], 4)
+        self.assertEqual(len(page["alertas"]), 4)
 
     def test_without_baseline_no_average_or_threshold_is_invented(self):
         response = self.evaluate({"inicio": "2019-01-01", "fin": "2019-01-02"})

@@ -2,17 +2,19 @@ from fractions import Fraction
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import Cliente, Entrega, HistorialPedido, HistorialRepartidor, Pedido, Repartidor, Restaurante, Usuario
-from app.logistics.priority import calculate, refresh_priorities
-from app.logistics.schemas import AssignmentOutput, DeliveryOutput, DeliveryStateInput, DistanceInput, TrackingEvent, TrackingOutput
-from app.orders.service import lock_order_relations
-from app.preparation.service import scoped_order
+from app.logistics.priority import PENDING, calculate
+from app.logistics.schemas import AssignmentInput, AssignmentOutput, DeliveryOutput, DeliveryStateInput, DistanceInput, TrackingEvent, TrackingOutput
+from app.orders.service import lock_order_relations, state_since_query
+from app.orders.summaries import summary_data
+from app.preparation.service import preparation, scoped_order
+from app.orders.distance import unconfirmed_distances
 
-IN_PROGRESS = ("Asignado", "En camino")
+IN_PROGRESS = ("Asignado", "En camino", "asignada")
 FINISHED = ("Entregado", "No entregado")
 
 
@@ -26,18 +28,41 @@ def delivery_cost(restaurant: Restaurante, order: Pedido) -> Decimal:
     return cost
 
 
-def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int) -> AssignmentOutput:
+def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selection: AssignmentInput | None = None) -> AssignmentOutput:
     lock_order_relations(db)
     restaurant = db.scalar(select(Restaurante).where(Restaurante.id_restaurante == restaurant_id).with_for_update(read=True))
     if restaurant is None:
         raise HTTPException(404, "Restaurante no disponible.")
-    _, ordered = refresh_priorities(db, restaurant_id)
-    existing = set(db.scalars(select(Entrega.id_pedido).where(Entrega.id_pedido.in_([order.id_pedido for order in ordered]))).all())
-    ready = [order for order in ordered if order.estado == "Listo" and order.id_pedido not in existing]
+    # Despacho separado del ranking de ingreso: primero quien lleva más tiempo listo.
+    ready = db.scalars(select(Pedido).where(Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Listo',
+        ~exists(select(Entrega.id_entrega).where(Entrega.id_pedido == Pedido.id_pedido)))
+        .order_by(func.coalesce(state_since_query(), Pedido.fecha_hora), Pedido.fecha_hora, Pedido.id_pedido)
+        .with_for_update()).all()
+    unknown = unconfirmed_distances(db, [o.id_pedido for o in ready])
+    eligible = [order for order in ready if order.id_pedido not in unknown and order.distancia_km <= 5]
     candidates = ranked_couriers(db, restaurant_id)
+    if selection is not None:
+        order = scoped_order(db, restaurant_id, selection.id_pedido, lock=True)
+        if order.id_pedido not in {o.id_pedido for o in ready}:
+            raise HTTPException(409, 'El pedido ya no está listo para asignar.')
+        if preparation(db, restaurant_id, order.id_pedido).version != selection.version:
+            raise HTTPException(409, 'El pedido cambió. Actualizá los pedidos antes de asignarlo.')
+        candidates = [row for row in candidates if row[0].id_repartidor == selection.id_repartidor]
+        if not candidates:
+            raise HTTPException(409, 'El repartidor no está disponible en este restaurante.')
+        if selection.distancia_km is not None:
+            if order.distancia_km != selection.distancia_km or order.id_pedido in unknown:
+                db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario, tipo_evento='distancia',
+                    estado='Listo', detalle=f'Distancia registrada: {selection.distancia_km} km.'))
+                order.distancia_km = selection.distancia_km
+        elif order.id_pedido in unknown:
+            raise HTTPException(409, 'Falta una distancia válida para calcular el envío. Ingresala al asignar.')
+        if order.distancia_km > 5:
+            raise HTTPException(422, 'La distancia de entrega supera la cobertura de 5 km.')
+        ready, eligible = [order], [order]
     # Al asignar pasa a Ocupado: se usa cada candidato una vez en este lote.
     plan = [(order, courier, account, delivery_cost(restaurant, order))
-            for order, (courier, account) in zip(ready, candidates)]
+            for order, (courier, account) in zip(eligible, candidates)]
     created = []
     try:
         for order, courier, account, cost in plan:
@@ -82,12 +107,19 @@ def delivery_output(row) -> DeliveryOutput:
     return DeliveryOutput(id_entrega=delivery.id_entrega, id_pedido=order.id_pedido,
                           id_repartidor=delivery.id_repartidor, repartidor=courier, cliente=client,
                           direccion_entrega=order.direccion_entrega, referencia_local=order.referencia_local,
-                          estado=delivery.estado, fecha_asignacion=delivery.fecha_asignacion)
+                          estado=delivery.estado, fecha_asignacion=delivery.fecha_asignacion,
+                          distancia_km=order.distancia_km)
 
 
-def deliveries(db: Session, user: Usuario, offset: int) -> list[DeliveryOutput]:
-    return [delivery_output(row) for row in db.execute(delivery_query(user)
-            .order_by(Entrega.fecha_asignacion.desc(), Entrega.id_entrega.desc()).offset(offset).limit(20)).all()]
+def deliveries(db: Session, user: Usuario, offset: int, *, warnings=None) -> list[DeliveryOutput]:
+    rows = db.execute(delivery_query(user)
+            .order_by(Pedido.fecha_hora.desc(), Pedido.id_pedido.desc()).offset(offset).limit(20)).all()
+    extra = summary_data(db, [row[1].id_pedido for row in rows])
+    from app.analytics.operational import owner_order_warnings
+    if warnings is None:
+        warnings = owner_order_warnings(db, user, [row[1].id_pedido for row in rows])
+    return [delivery_output(row).model_copy(update={"resumen_productos": extra[row[1].id_pedido]["resumen_productos"],
+            'advertencia_entrega': warnings.get(row[1].id_pedido, {}).get('advertencia_entrega')}) for row in rows]
 
 
 def tracking(db: Session, user: Usuario, order_id: int) -> TrackingOutput:
@@ -108,9 +140,14 @@ def tracking(db: Session, user: Usuario, order_id: int) -> TrackingOutput:
     events = db.execute(select(HistorialPedido.id_historial, HistorialPedido.fecha_hora,
                                Usuario.nombre.label("usuario"), HistorialPedido.estado, HistorialPedido.detalle)
                         .join(Usuario, Usuario.id_usuario == HistorialPedido.id_usuario)
-                        .where(HistorialPedido.id_pedido == order_id).order_by(HistorialPedido.id_historial)).mappings()
+                        .where(HistorialPedido.id_pedido == order_id)
+                        .order_by(HistorialPedido.fecha_hora, HistorialPedido.id_historial)).mappings()
+    delivery = delivery_output(row) if row else None
+    if delivery and user.rol == 'propietario':
+        from app.analytics.operational import owner_order_warnings
+        delivery.advertencia_entrega = owner_order_warnings(db, user, [order_id]).get(order_id, {}).get('advertencia_entrega')
     return TrackingOutput(id_pedido=order_id, estado_pedido=order.estado,
-                          entrega=delivery_output(row) if row else None,
+                          entrega=delivery,
                           historial=[TrackingEvent(**event) for event in events])
 
 
@@ -119,10 +156,11 @@ def change_distance(db: Session, user: Usuario, restaurant_id: int, order_id: in
     order = scoped_order(db, restaurant_id, order_id, lock=True)
     if order.estado not in {"Nuevo", "En preparación", "Listo"} or db.scalar(select(Entrega.id_entrega).where(Entrega.id_pedido == order_id)):
         raise HTTPException(409, "La distancia solo puede corregirse antes de asignar la entrega.")
-    if order.distancia_km != data.distancia_km:
+    if order.distancia_km != data.distancia_km or order_id in unconfirmed_distances(db, [order_id]):
         previous = order.distancia_km
         order.distancia_km = data.distancia_km
-        calculate(order, db.scalar(select(func.now())))
+        if order.estado in PENDING:
+            calculate(order, db.scalar(select(func.now())))
         db.add(HistorialPedido(id_pedido=order_id, id_usuario=user.id_usuario, tipo_evento="distancia", estado=order.estado,
                               detalle=f"Distancia estimada: {previous} → {data.distancia_km} km."))
     db.flush()
@@ -134,7 +172,9 @@ def change_distance(db: Session, user: Usuario, restaurant_id: int, order_id: in
 def ranked_couriers(db: Session, restaurant_id: int):
     candidates = db.execute(select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
                             .where(Usuario.id_restaurante == restaurant_id, Usuario.rol == "repartidor", Usuario.activo.is_(True),
-                                   Repartidor.estado_disponibilidad == "Disponible")
+                                   Repartidor.estado_disponibilidad == "Disponible",
+                                   ~exists(select(Entrega.id_entrega).where(Entrega.id_repartidor == Repartidor.id_repartidor,
+                                                                          Entrega.estado.in_(IN_PROGRESS))))
                             .order_by(Repartidor.id_repartidor).with_for_update()).all()
     stats = {courier.id_repartidor: [0, 0, 0] for courier, _ in candidates}
     rows = db.execute(select(Entrega.id_repartidor, Entrega.estado, func.count())

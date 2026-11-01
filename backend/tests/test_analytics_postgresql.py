@@ -10,12 +10,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Alerta
-from tests import test_analytics, test_orders_postgresql
+from tests import test_analytics, test_forecast_daily, test_orders_postgresql
 from tests.auth_support import HEADERS
 
 
 @unittest.skipUnless(os.environ.get("TFG_TEST_POSTGRES_DSN"), "Requiere PostgreSQL local descartable")
 class ForecastPostgreSQLTests(test_analytics.ForecastTests):
+    setUp = test_orders_postgresql.OrderReadPostgreSQLTests.setUp
+    drop_test_tables = test_orders_postgresql.OrderReadPostgreSQLTests.drop_test_tables
+
+
+@unittest.skipUnless(os.environ.get('TFG_TEST_POSTGRES_DSN'), 'Requiere PostgreSQL local descartable')
+class DayForecastPostgreSQLTests(test_forecast_daily.DayForecastTests):
     setUp = test_orders_postgresql.OrderReadPostgreSQLTests.setUp
     drop_test_tables = test_orders_postgresql.OrderReadPostgreSQLTests.drop_test_tables
 
