@@ -77,7 +77,7 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
 
   return <section id="gestion-pedidos" className="menu-manager" aria-label="Pedidos">
     {view !== 'detail' && <div className="menu-heading"><h2>{view === 'create' ? 'Armá un nuevo pedido' : view === 'menu' ? 'Elegí tu restaurante' : 'Gestioná tus pedidos'}</h2>
-      <button type="button" disabled={busy} onClick={() => { void refreshData(); }}>Actualizar pedidos y menú</button></div>}
+      <button type="button" disabled={busy} onClick={() => { void refreshData(); }}>Actualizar pedidos</button></div>}
     {(error || queryError) && <p role="alert" className="auth-error">{error || queryError}</p>}
     {notice && <p role="status" className="menu-notice">{notice}</p>}
     {view === 'create' && restaurant !== null ? <form className="menu-editor menu-form order-create-form" onSubmit={(event) => void submit(event)}>

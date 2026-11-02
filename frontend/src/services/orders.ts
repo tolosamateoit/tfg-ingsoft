@@ -1,4 +1,4 @@
-import { cacheScope, invalidateMutation } from './queryCache';
+import { cacheScope, confirmMutation } from './queryCache';
 import { sessionHeaders } from './session';
 export type Restaurant = { id_restaurante: number; nombre: string; abierto: boolean; delivery_disponible: boolean };
 export type MenuItem = { id_producto: number; nombre: string; precio: string; descripcion?: string | null; imagen_url?: string | null };
@@ -37,7 +37,7 @@ export async function orderRequest<T>(path: string, body?: OrderInput, signal?: 
     throw new OrderError(response.status, detail ?? 'No se pudo completar la solicitud. Volvé a intentar.');
   }
   const result = await response.json() as T;
-  if (body) await invalidateMutation(path, requestScope);
+  if (body) await confirmMutation(path, requestScope, result);
   return result;
 }
 export type OrderPage = { pedidos: OrderSummary[]; total: number; limit: number; offset: number;

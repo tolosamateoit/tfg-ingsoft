@@ -32,10 +32,19 @@ def stock(db: Session, restaurant_id: int) -> list[StockOutput]:
 
 def preparation(db: Session, restaurant_id: int, order_id: int) -> PreparationOutput:
     order = scoped_order(db, restaurant_id, order_id)
-    history = db.execute(select(HistorialPedido.id_historial, HistorialPedido.fecha_hora, Usuario.nombre.label("usuario"),
+    return _preparation_output(db, restaurant_id, order)
+
+
+def preparation_history(db, order_id):
+    return db.execute(select(HistorialPedido.id_historial, HistorialPedido.fecha_hora, Usuario.nombre.label("usuario"),
                                 HistorialPedido.estado, HistorialPedido.tipo_evento, HistorialPedido.detalle)
                          .join(Usuario, Usuario.id_usuario == HistorialPedido.id_usuario)
                          .where(HistorialPedido.id_pedido == order_id).order_by(HistorialPedido.id_historial)).mappings().all()
+
+
+def _preparation_output(db, restaurant_id, order, history=None):
+    order_id = order.id_pedido
+    history = preparation_history(db, order_id) if history is None else history
     movements = db.execute(select(MovimientoStock.id_movimiento, MovimientoStock.id_insumo, Insumo.nombre,
                                   Insumo.unidad, MovimientoStock.cantidad, MovimientoStock.fecha_hora, MovimientoStock.motivo)
                            .join(Insumo, Insumo.id_insumo == MovimientoStock.id_insumo)
@@ -78,12 +87,12 @@ def change_preparation(db: Session, user: Usuario, restaurant_id: int, order_id:
                        data: PreparationInput) -> PreparationOutput:
     lock_order_relations(db)  # Antes de las filas: mismo orden que HU-02/HU-03 y triggers.
     order = scoped_order(db, restaurant_id, order_id, lock=True)
-    current = preparation(db, restaurant_id, order_id)
+    history = preparation_history(db, order_id)
     if order.estado == data.estado and not data.nueva_preparacion:
-        return current  # Reintento normal: sin historial ni consumo duplicados.
-    if data.version != current.version:
+        return _preparation_output(db, restaurant_id, order, history)  # Reintento sin consumo duplicado.
+    if data.version != (history[-1]['id_historial'] if history else 0):
         raise HTTPException(409, "El pedido cambió. Actualizá el detalle antes de continuar.")
-    prepared = any(event.tipo_evento in {"preparacion", "nueva_preparacion"} for event in current.historial)
+    prepared = any(event['tipo_evento'] in {"preparacion", "nueva_preparacion"} for event in history)
     if data.nueva_preparacion:
         valid = prepared and order.estado in {"En preparación", "Listo"}
     else:
@@ -107,7 +116,7 @@ def change_preparation(db: Session, user: Usuario, restaurant_id: int, order_id:
             db.add(MovimientoStock(id_insumo=ingredient.id_insumo, id_pedido=order_id, tipo="consumo", cantidad=-quantity,
                                    motivo=f"Preparación #{event.id_historial}: {event.detalle}"))
         db.flush()
-        result = preparation(db, restaurant_id, order_id)
+        result = _preparation_output(db, restaurant_id, order)
         db.commit()
         return result
     except IntegrityError:

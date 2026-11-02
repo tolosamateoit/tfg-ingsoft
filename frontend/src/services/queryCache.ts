@@ -30,6 +30,14 @@ export function ensureApiQuery<T>(path:string, read:(signal:AbortSignal)=>Promis
 }
 
 export function affectedByMutation(changed: string, cached: string) {
+  const restaurant = changed.match(/^restaurantes\/(\d+)\//)?.[1];
+  const cachedRestaurant = cached.match(/^restaurantes\/(\d+)\//)?.[1];
+  if (restaurant && cachedRestaurant && restaurant !== cachedRestaurant) return false;
+  const order = changed.match(/(?:^|\/)pedidos\/(\d+)(?:\/|$)/)?.[1];
+  const cachedOrder = cached.match(/(?:^|\/)pedidos\/(\d+)(?:\/|$)/)?.[1];
+  if (order && cachedOrder && order !== cachedOrder) return false;
+  if (changed.endsWith('/distancia'))
+    return /(^|\/)(pedidos|entregas|prioridades)(\/|\?|$)/.test(cached);
   const catalog = /\/(productos|insumos)(\/|$)/.test(changed);
   if (catalog) return /^(pedidos|entregas)(\/|\?|$)/.test(cached) || /\/(productos|insumos|stock|movimientos-stock|menu|predicciones|indicadores|alertas|pedidos|prioridades)(\/|\?|$)/.test(cached);
   if (/(^|\/)(pedidos|entregas)(\/|$)/.test(changed))
@@ -42,4 +50,24 @@ export async function invalidateMutation(path: string, requestScope: string) {
   if (requestScope !== scope) return;
   await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === requestScope
     && query.queryKey[1] === 'api' && affectedByMutation(path, String(query.queryKey[2])) });
+}
+
+// Se llama únicamente después de recibir una respuesta exitosa del servidor.
+// Cancelar lecturas anteriores impide que sobrescriban la versión confirmada.
+export async function confirmMutation(path: string, requestScope: string, result: unknown) {
+  if (requestScope !== scope) return;
+  await queryClient.cancelQueries({ predicate: query => query.queryKey[0] === requestScope
+    && query.queryKey[1] === 'api' && affectedByMutation(path, String(query.queryKey[2])) });
+  if (requestScope !== scope) return;
+  let confirmedPath: string | undefined;
+  if (result && typeof result === 'object' && 'id_pedido' in result) {
+    if (path.endsWith('/preparacion') && 'version' in result && 'historial' in result) confirmedPath = path;
+    else if ('estado_pedido' in result && 'historial' in result) confirmedPath = `pedidos/${result.id_pedido}/seguimiento`;
+    else if ('detalles' in result) confirmedPath = `pedidos/${result.id_pedido}`;
+  }
+  if (confirmedPath) queryClient.setQueryData(apiKey(confirmedPath), result);
+  // Las consultas conservan su estado de error y los datos visibles si falla la actualización.
+  void queryClient.invalidateQueries({ predicate: query => query.queryKey[0] === requestScope
+    && query.queryKey[1] === 'api' && query.queryKey[2] !== confirmedPath
+    && affectedByMutation(path, String(query.queryKey[2])) }).catch(() => {});
 }

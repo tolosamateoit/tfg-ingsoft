@@ -11,7 +11,7 @@ from app.logistics.priority import PENDING, calculate
 from app.logistics.schemas import AssignmentInput, AssignmentOutput, DeliveryOutput, DeliveryStateInput, DistanceInput, TrackingEvent, TrackingOutput
 from app.orders.service import lock_order_relations, state_since_query
 from app.orders.summaries import summary_data
-from app.preparation.service import preparation, scoped_order
+from app.preparation.service import scoped_order
 from app.orders.distance import unconfirmed_distances
 
 IN_PROGRESS = ("Asignado", "En camino", "asignada")
@@ -34,18 +34,23 @@ def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selectio
     if restaurant is None:
         raise HTTPException(404, "Restaurante no disponible.")
     # Despacho separado del ranking de ingreso: primero quien lleva más tiempo listo.
-    ready = db.scalars(select(Pedido).where(Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Listo',
+    ready_query = select(Pedido).where(Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Listo',
         ~exists(select(Entrega.id_entrega).where(Entrega.id_pedido == Pedido.id_pedido)))
+    if selection is not None:
+        ready_query = ready_query.where(Pedido.id_pedido == selection.id_pedido)
+    ready = db.scalars(ready_query
         .order_by(func.coalesce(state_since_query(), Pedido.fecha_hora), Pedido.fecha_hora, Pedido.id_pedido)
         .with_for_update()).all()
     unknown = unconfirmed_distances(db, [o.id_pedido for o in ready])
     eligible = [order for order in ready if order.id_pedido not in unknown and order.distancia_km <= 5]
-    candidates = ranked_couriers(db, restaurant_id)
+    candidates = ranked_couriers(db, restaurant_id, courier_id=selection.id_repartidor if selection else None)
     if selection is not None:
-        order = scoped_order(db, restaurant_id, selection.id_pedido, lock=True)
-        if order.id_pedido not in {o.id_pedido for o in ready}:
+        if not ready:
+            scoped_order(db, restaurant_id, selection.id_pedido, lock=True)
             raise HTTPException(409, 'El pedido ya no está listo para asignar.')
-        if preparation(db, restaurant_id, order.id_pedido).version != selection.version:
+        order = ready[0]
+        version = db.scalar(select(func.max(HistorialPedido.id_historial)).where(HistorialPedido.id_pedido == order.id_pedido)) or 0
+        if version != selection.version:
             raise HTTPException(409, 'El pedido cambió. Actualizá los pedidos antes de asignarlo.')
         candidates = [row for row in candidates if row[0].id_repartidor == selection.id_repartidor]
         if not candidates:
@@ -117,7 +122,7 @@ def deliveries(db: Session, user: Usuario, offset: int, *, warnings=None) -> lis
     extra = summary_data(db, [row[1].id_pedido for row in rows])
     from app.analytics.operational import owner_order_warnings
     if warnings is None:
-        warnings = owner_order_warnings(db, user, [row[1].id_pedido for row in rows])
+        warnings = owner_order_warnings(db, user, [row[1].id_pedido for row in rows], target_orders=[row[1] for row in rows])
     return [delivery_output(row).model_copy(update={"resumen_productos": extra[row[1].id_pedido]["resumen_productos"],
             'advertencia_entrega': warnings.get(row[1].id_pedido, {}).get('advertencia_entrega')}) for row in rows]
 
@@ -136,7 +141,14 @@ def tracking(db: Session, user: Usuario, order_id: int) -> TrackingOutput:
     order = db.scalar(query)
     if order is None:
         raise HTTPException(404, "Pedido no disponible.")
-    row = db.execute(delivery_query(user).where(Entrega.id_pedido == order_id)).first()
+    return _tracking_output(db, user, order)
+
+
+def _tracking_output(db, user, order, row=None):
+    """Respuesta para un pedido ya autorizado dentro de la misma transacción."""
+    order_id = order.id_pedido
+    if row is None:
+        row = db.execute(delivery_query(user).where(Entrega.id_pedido == order_id)).first()
     events = db.execute(select(HistorialPedido.id_historial, HistorialPedido.fecha_hora,
                                Usuario.nombre.label("usuario"), HistorialPedido.estado, HistorialPedido.detalle)
                         .join(Usuario, Usuario.id_usuario == HistorialPedido.id_usuario)
@@ -145,7 +157,7 @@ def tracking(db: Session, user: Usuario, order_id: int) -> TrackingOutput:
     delivery = delivery_output(row) if row else None
     if delivery and user.rol == 'propietario':
         from app.analytics.operational import owner_order_warnings
-        delivery.advertencia_entrega = owner_order_warnings(db, user, [order_id]).get(order_id, {}).get('advertencia_entrega')
+        delivery.advertencia_entrega = owner_order_warnings(db, user, [order_id], target_orders=[order]).get(order_id, {}).get('advertencia_entrega')
     return TrackingOutput(id_pedido=order_id, estado_pedido=order.estado,
                           entrega=delivery,
                           historial=[TrackingEvent(**event) for event in events])
@@ -164,18 +176,23 @@ def change_distance(db: Session, user: Usuario, restaurant_id: int, order_id: in
         db.add(HistorialPedido(id_pedido=order_id, id_usuario=user.id_usuario, tipo_evento="distancia", estado=order.estado,
                               detalle=f"Distancia estimada: {previous} → {data.distancia_km} km."))
     db.flush()
-    result = tracking(db, user, order_id)
+    result = _tracking_output(db, user, order)
     db.commit()
     return result
 
 
-def ranked_couriers(db: Session, restaurant_id: int):
-    candidates = db.execute(select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
+def ranked_couriers(db: Session, restaurant_id: int, *, courier_id=None):
+    query = select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
+    if courier_id is not None:
+        query = query.where(Repartidor.id_repartidor == courier_id)
+    candidates = db.execute(query
                             .where(Usuario.id_restaurante == restaurant_id, Usuario.rol == "repartidor", Usuario.activo.is_(True),
                                    Repartidor.estado_disponibilidad == "Disponible",
                                    ~exists(select(Entrega.id_entrega).where(Entrega.id_repartidor == Repartidor.id_repartidor,
                                                                           Entrega.estado.in_(IN_PROGRESS))))
                             .order_by(Repartidor.id_repartidor).with_for_update()).all()
+    if courier_id is not None:
+        return candidates
     stats = {courier.id_repartidor: [0, 0, 0] for courier, _ in candidates}
     rows = db.execute(select(Entrega.id_repartidor, Entrega.estado, func.count())
                       .join(Pedido, Pedido.id_pedido == Entrega.id_pedido)
@@ -200,7 +217,7 @@ def change_delivery_state(db: Session, user: Usuario, delivery_id: int, data: De
         raise HTTPException(404, "Entrega no disponible.")
     delivery, order, _, _ = row
     if data.estado == delivery.estado:
-        return tracking(db, user, order.id_pedido)
+        return _tracking_output(db, user, order, row)
     if not (delivery.estado == "Asignado" and data.estado == "En camino"
             or delivery.estado == "En camino" and data.estado in FINISHED):
         raise HTTPException(409, "Transición de entrega no permitida.")
@@ -218,7 +235,7 @@ def change_delivery_state(db: Session, user: Usuario, delivery_id: int, data: De
                 courier.estado_disponibilidad = "Disponible"
                 db.add(HistorialRepartidor(id_repartidor=courier.id_repartidor, estado="Disponible"))
         db.flush()
-        result = tracking(db, user, order.id_pedido)
+        result = _tracking_output(db, user, order, row)
         db.commit()
         return result
     except IntegrityError:

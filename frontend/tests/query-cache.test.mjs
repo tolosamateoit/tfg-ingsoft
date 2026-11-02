@@ -159,3 +159,35 @@ test('los servicios HTTP invalidan la cache solo despues de mutaciones exitosas 
     assert.equal(client.getQueryState(apiKey(path)).isInvalidated,false);
   } finally { if(savedWindow===undefined) delete globalThis.window; else globalThis.window=savedWindow; }
 });
+
+test('confirmacion devuelve control sin esperar la recarga y publica la version confirmada', async () => {
+  const path='restaurantes/2/pedidos/1/preparacion';
+  const day='restaurantes/2/pedidos/operacion?offset=0';
+  const read=deferred(); let calls=0;
+  client.setQueryData(apiKey(day),{old:true});
+  const observer=new QueryObserver(client,apiOptions(day,()=>{calls++;return read.promise;}));
+  const stop=observer.subscribe(()=>{});
+  const saved={id_pedido:1,estado:'Listo',version:25,historial:[],movimientos:[]};
+  await module.exports.confirmMutation(path,cacheScope(),saved);
+  assert.deepEqual(client.getQueryData(apiKey(path)),saved);
+  assert.equal(calls,1);
+  assert.equal(client.getQueryState(apiKey(day)).fetchStatus,'fetching');
+  assert.deepEqual(client.getQueryData(apiKey(day)),{old:true});
+  read.resolve({old:false});
+  await client.fetchQuery(apiOptions(day,()=>read.promise));
+  assert.deepEqual(client.getQueryData(apiKey(day)),{old:false});
+  stop();
+});
+
+test('una lectura anterior no sobrescribe la confirmacion; no invalida otro restaurante ni otro detalle', async () => {
+  const path='restaurantes/2/pedidos/1/preparacion', slow=deferred();
+  const old=ensureApiQuery(path,()=>slow.promise).catch(()=>{});
+  const saved={id_pedido:1,estado:'Listo',version:8,historial:[],movimientos:[]};
+  await module.exports.confirmMutation(path,cacheScope(),saved);
+  slow.resolve({id_pedido:1,estado:'Nuevo',version:1}); await old;
+  assert.deepEqual(client.getQueryData(apiKey(path)),saved);
+  assert.equal(affectedByMutation(path,'restaurantes/3/pedidos/operacion'),false);
+  assert.equal(affectedByMutation(path,'pedidos/99'),false);
+  assert.equal(affectedByMutation('restaurantes/2/pedidos/1/distancia','restaurantes/2/predicciones/diaria'),false);
+  assert.equal(affectedByMutation('restaurantes/2/pedidos/1/distancia','restaurantes/2/pedidos/operacion'),true);
+});

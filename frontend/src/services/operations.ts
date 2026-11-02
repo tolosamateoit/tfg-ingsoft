@@ -1,4 +1,4 @@
-import { cacheScope, invalidateMutation } from './queryCache';
+import { cacheScope, confirmMutation } from './queryCache';
 import { OrderError } from './orders';
 import { sessionHeaders } from './session';
 
@@ -16,7 +16,7 @@ export async function operationRequest<T>(path: string, body?: object, signal?: 
     throw new OrderError(response.status, detail ?? 'No se pudo completar la operación. Actualizá los datos.');
   }
   const result = await response.json() as T;
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) await invalidateMutation(path, requestScope);
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) await confirmMutation(path, requestScope, result);
   return result;
 }
 

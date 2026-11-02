@@ -13,7 +13,7 @@ from statistics import median, quantiles
 
 from fastapi import HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.service import as_utc
@@ -104,8 +104,14 @@ class DeliverySample:
     duration: Decimal
 
 
-def delivery_samples(db, restaurant, cutoff):
-    deliveries = db.execute(select(Entrega.id_pedido, Entrega.id_entrega, Entrega.id_repartidor, Entrega.fecha_asignacion)
+def delivery_samples(db, restaurant, cutoff, *, courier_order_ids=None):
+    query = select(Entrega.id_pedido, Entrega.id_entrega, Entrega.id_repartidor, Entrega.fecha_asignacion)
+    if courier_order_ids is not None:
+        if not courier_order_ids:
+            return []
+        query = query.where(Entrega.id_repartidor.in_(select(Entrega.id_repartidor)
+            .where(Entrega.id_pedido.in_(courier_order_ids)).correlate(None)))
+    deliveries = db.execute(query
         .join(Pedido, Pedido.id_pedido == Entrega.id_pedido)
         .join(Repartidor, Repartidor.id_repartidor == Entrega.id_repartidor)
         .join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
@@ -136,7 +142,7 @@ def delivery_samples(db, restaurant, cutoff):
     return sorted(samples.values(), key=lambda r: (r.ended, r.delivery_id))
 
 
-def detect_alerts(orders, samples):
+def detect_alerts(orders, samples, *, target_ids=None):
     """Devuelve evidencias por pedido y clasificación de entregas con referencia."""
     amount_alerts, delay_alerts, classified = {}, {}, {}
     delivered = defaultdict(list)
@@ -146,6 +152,10 @@ def detect_alerts(orders, samples):
         if order.estado == 'Entregado' and order.importe_total > 0:
             delivered[local_day(order.fecha_hora)].append(order.importe_total)
     for day, daily in grouped.items():
+        if target_ids is not None:
+            daily = [order for order in daily if order.id_pedido in target_ids]
+            if not daily:
+                continue
         values = [v for previous, amounts in delivered.items() if day - timedelta(days=90) <= previous < day for v in amounts]
         reference = robust_reference(values, 20)
         if not reference:
@@ -159,6 +169,9 @@ def detect_alerts(orders, samples):
                     f'Importe {amount_text(order.importe_total)}; lo habitual es {amount_text(center)}.')
     prior = defaultdict(list)
     for sample in samples:
+        if target_ids is not None and sample.order_id not in target_ids:
+            prior[sample.courier_id].append(sample)
+            continue
         previous = [r.duration for r in prior[sample.courier_id]
                     if sample.began - timedelta(days=90) <= r.ended < sample.began]
         reference = robust_reference(previous, 10)
@@ -183,16 +196,39 @@ def operational_evidence(db, restaurant, cutoff):
     return orders, samples, amounts, delays, classified
 
 
-def owner_order_warnings(db, user, order_ids, *, reference_day=None):
+def owner_order_warnings(db, user, order_ids, *, reference_day=None, target_orders=None):
     """Un lote por página; los demás roles no reciben referencias privadas."""
     if user.rol != 'propietario' or (order_ids is not None and not order_ids):
         return {}
     day = reference_day or operational_date(db, user.id_restaurante)
     if day is None:
         return {}
-    orders, _, amounts, delays, _ = operational_evidence(db, user.id_restaurante, operational_day_bounds(day)[1])
+    cutoff = operational_day_bounds(day)[1]
     if order_ids is None:
+        orders, _, amounts, delays, _ = operational_evidence(db, user.id_restaurante, cutoff)
         order_ids = [order.id_pedido for order in orders]
+    else:
+        ids = set(order_ids)
+        if target_orders is None:
+            target_orders = db.scalars(select(Pedido).where(Pedido.id_restaurante == user.id_restaurante,
+                Pedido.id_pedido.in_(ids), Pedido.fecha_hora < cutoff)).all()
+        targets = [o for o in target_orders if o.id_pedido in ids and o.id_restaurante == user.id_restaurante
+                   and as_utc(o.fecha_hora) < cutoff]
+        amounts, delays = {}, {}
+        if targets:
+            first = min(local_day(o.fecha_hora) for o in targets)
+            last = max(local_day(o.fecha_hora) for o in targets)
+            # Solo importes entregados en las ventanas de referencia y pedidos objetivo.
+            orders = db.execute(select(Pedido.id_pedido, Pedido.fecha_hora, Pedido.estado, Pedido.importe_total)
+                .where(Pedido.id_restaurante == user.id_restaurante, Pedido.fecha_hora < cutoff,
+                    or_(Pedido.id_pedido.in_(ids), and_(Pedido.estado == 'Entregado', Pedido.importe_total > 0,
+                        Pedido.fecha_hora >= operational_day_bounds(first - timedelta(days=90))[0],
+                        Pedido.fecha_hora < operational_day_bounds(last)[0])))
+                .order_by(Pedido.fecha_hora, Pedido.id_pedido)).all()
+            # Conservar todos los eventos de cada entrega evita perder viajes largos o repetidos.
+            samples = delivery_samples(db, user.id_restaurante, cutoff,
+                courier_order_ids=[o.id_pedido for o in targets if o.estado == 'Entregado'])
+            amounts, delays, _ = detect_alerts(orders, samples, target_ids=ids)
     return {oid: dict(advertencia_importe=amounts[oid].mensaje if oid in amounts else None,
                       advertencia_entrega=delays[oid].mensaje if oid in delays else None) for oid in order_ids}
 
@@ -248,7 +284,7 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
     # Mismo servicio, fecha, unidades enteras y recetas que Previsión de demanda.
     # El stock es actual: nunca se presenta como una reconstrucción de fechas pasadas.
     from app.analytics.forecast import day_forecast
-    forecast = day_forecast(db, restaurant, day)
+    forecast = day_forecast(db, restaurant, day, reference_day=day, history_orders=orders if target == day else None)
     result.fecha_stock = forecast.fecha_seleccionada
     result.aviso_stock = forecast.aviso
     for row in forecast.insumos:

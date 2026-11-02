@@ -6,19 +6,22 @@ import { OrderError, type OperatingDay, type OperatingOrder } from '../services/
 import { Dialog, Status } from './ui';
 import WarningBadge from './WarningBadge';
 import PriorityExplanation from './PriorityExplanation';
+import { apiKey, queryClient } from '../services/queryCache';
 
 type CardProps = { row: OperatingOrder; couriers: Courier[]; busy: boolean;
+  confirmedState?: string;
   onOpen: (id: number) => void; onState: (row: OperatingOrder, state: string) => void;
   onReject: (row: OperatingOrder) => void; onAssign: (row: OperatingOrder, courier: number, distance?: string) => void;
   onDelivery: (row: OperatingOrder, state: string) => void; onDistance: (row: OperatingOrder, distance: string) => void };
 
-export function DailyOrderCard({ row, couriers, busy, onOpen, onState, onReject, onAssign, onDelivery, onDistance }: CardProps) {
+export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, onState, onReject, onAssign, onDelivery, onDistance }: CardProps) {
   const [courier, setCourier] = useState('');
   const [distance, setDistance] = useState('');
   const validCourier = couriers.some((c) => c.id_repartidor === Number(courier));
   return <article className={`daily-order${row.prioridad ? ' daily-order--active' : ''}`}>
     <header><div className="daily-order-title">{row.prioridad && <span className="daily-order-rank">Prioridad <strong>{row.prioridad.posicion}</strong></span>}
-      <h4>Pedido #{row.id_pedido}<WarningBadge message={row.advertencia_importe}/></h4></div><Status value={row.estado}/></header>
+      <h4>Pedido #{row.id_pedido}<WarningBadge message={row.advertencia_importe}/></h4></div><Status value={confirmedState ?? row.estado}/></header>
+    {confirmedState && <p role="status">Cambio guardado. Actualizando pedido…</p>}
     <p className="daily-order-time">{formatDateTime(row.fecha_hora)}</p>
     <p className="daily-order-products">{row.resumen_productos || 'Sin productos registrados'}</p>
     <div className="daily-order-info"><strong>{formatMoney(row.importe_total)}</strong>
@@ -57,13 +60,15 @@ export function DailyOrderCard({ row, couriers, busy, onOpen, onState, onReject,
 }
 
 type ViewProps = { data: OperatingDay; busy: boolean; onOpen: (id:number) => void;
+  pending?: Record<number, {state:string; revision:number}>;
   onState: CardProps['onState']; onReject: CardProps['onReject']; onAssign: CardProps['onAssign']; onDelivery: CardProps['onDelivery'];
   onDistance: CardProps['onDistance'];
   onPage: (offset:number) => void };
 
-export function DailyOrdersView({data, busy, onPage, ...actions}: ViewProps) {
+export function DailyOrdersView({data, busy, pending = {}, onPage, ...actions}: ViewProps) {
   const cards = (rows: OperatingOrder[]) => <div className="daily-orders-grid">{rows.map((row) => <DailyOrderCard key={row.id_pedido}
-    row={row} couriers={data.repartidores} busy={busy} {...actions}/>)}</div>;
+    row={row} couriers={data.repartidores} busy={busy || Boolean(pending[row.id_pedido])}
+    confirmedState={pending[row.id_pedido]?.state} {...actions}/>)}</div>;
   return <div className="daily-orders-board" aria-busy={busy}>
     <div className="daily-orders-caption"><p>{data.fecha_operativa ? `Día operativo: ${formatCalendarDate(data.fecha_operativa)}` : 'Sin pedidos registrados'}</p>
       <span>Actualización automática cada 30 segundos</span></div>
@@ -85,6 +90,7 @@ export default function DailyOrders({restaurant, onOpen, onSessionExpired}: Prop
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Record<number, {state:string; revision:number}>>({});
   const [rejecting, setRejecting] = useState<OperatingOrder | null>(null);
   const locked = useRef(false);
   function failed(failure: unknown) {
@@ -100,26 +106,40 @@ export default function DailyOrders({restaurant, onOpen, onSessionExpired}: Prop
     if (data && offset > 0 && offset >= data.total_finalizados) setOffset(0);
   }, [data, offset]);
   useEffect(() => { setError(query.error?.message ?? ''); }, [query.error]);
-  async function mutate(action: () => Promise<unknown>) {
+  useEffect(() => {
+    const revision = queryClient.getQueryState(apiKey(path))?.dataUpdateCount ?? 0;
+    setPending(current => Object.fromEntries(Object.entries(current).filter(([, row]) => row.revision >= revision)));
+  }, [query.dataUpdatedAt, path]);
+  async function mutate(row: OperatingOrder, action: () => Promise<unknown>) {
     if (locked.current) return;
     locked.current = true; setBusy(true); setError('');
-    try { await action(); setRejecting(null); }
+    try {
+      const result = await action() as {estado?:string; estado_pedido?:string; entregas?:unknown[]};
+      const state = queryClient.getQueryState(apiKey(path));
+      if (state?.fetchStatus === 'fetching' || state?.isInvalidated) {
+        setPending(current => ({...current, [row.id_pedido]: {
+          state:result.estado_pedido ?? result.estado ?? (result.entregas ? 'Asignado' : row.estado),
+          revision:state.dataUpdateCount,
+        }}));
+      }
+      setRejecting(null);
+    }
     catch(failure) { failed(failure); setRejecting(null); try { await load(); } catch { /* Se conserva el error de la acción y la última lectura. */ } }
     finally { locked.current = false; setBusy(false); }
   }
-  const state = (row:OperatingOrder, estado:string) => void mutate(() => operationRequest(
+  const state = (row:OperatingOrder, estado:string) => void mutate(row, () => operationRequest(
     `restaurantes/${restaurant}/pedidos/${row.id_pedido}/preparacion`, {estado,version:row.version}));
-  const assign = (row:OperatingOrder, id_repartidor:number, distancia_km?:string) => void mutate(() => operationRequest(
+  const assign = (row:OperatingOrder, id_repartidor:number, distancia_km?:string) => void mutate(row, () => operationRequest(
     `restaurantes/${restaurant}/entregas/asignar`, {id_pedido:row.id_pedido,id_repartidor,version:row.version,...(distancia_km !== undefined ? {distancia_km} : {})}, undefined, 'POST'));
-  const delivery = (row:OperatingOrder, estado:string) => { if (row.id_entrega !== null) void mutate(() => operationRequest(`entregas/${row.id_entrega}/estado`, {estado})); };
+  const delivery = (row:OperatingOrder, estado:string) => { if (row.id_entrega !== null) void mutate(row, () => operationRequest(`entregas/${row.id_entrega}/estado`, {estado})); };
   const distance = (row:OperatingOrder, value:string) => {
     if (row.distancia_km !== null && Number(row.distancia_km) === Number(value)) return;
-    void mutate(() => operationRequest(`restaurantes/${restaurant}/pedidos/${row.id_pedido}/distancia`, {distancia_km:value}));
+    void mutate(row, () => operationRequest(`restaurantes/${restaurant}/pedidos/${row.id_pedido}/distancia`, {distancia_km:value}));
   };
   return <>
     {error && <p role="alert" className="auth-error">{error} <button disabled={busy} onClick={() => void load().then(() => setError('')).catch(failed)}>Actualizar</button></p>}
     {busy && <p role="status" className="daily-orders-saving">Guardando y actualizando pedidos…</p>}
-    {data ? <DailyOrdersView data={data} busy={busy} onOpen={onOpen} onState={state} onReject={setRejecting}
+    {data ? <DailyOrdersView data={data} busy={busy} pending={pending} onOpen={onOpen} onState={state} onReject={setRejecting}
       onAssign={assign} onDelivery={delivery} onDistance={distance} onPage={setOffset}/> : !error && <p role="status">Cargando los pedidos del día…</p>}
     {rejecting && <Dialog title={`¿Rechazar pedido #${rejecting.id_pedido}?`} busy={busy} onClose={() => setRejecting(null)}>
       <p>El pedido quedará cancelado y se conservará en el historial.</p><div className="menu-actions">

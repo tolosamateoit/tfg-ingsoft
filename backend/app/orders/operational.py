@@ -57,7 +57,7 @@ def operating_day(db, user, restaurant_id, limit=20, offset=0):
     rows = [*active, *closed]
     ids = [r[0].id_pedido for r in rows]
     details = summary_data(db, ids)
-    warnings = owner_order_warnings(db, user, ids, reference_day=day)
+    warnings = owner_order_warnings(db, user, ids, reference_day=day, target_orders=[r[0] for r in rows])
     versions = dict(db.execute(select(HistorialPedido.id_pedido, func.max(HistorialPedido.id_historial))
                               .where(HistorialPedido.id_pedido.in_(ids)).group_by(HistorialPedido.id_pedido)).all()) if ids else {}
     unknown = unconfirmed_distances(db, ids)

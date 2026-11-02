@@ -1,9 +1,13 @@
 """Construcción diferida del engine, sin credenciales en archivos Alembic."""
 
 from sqlalchemy import URL, create_engine
-from sqlalchemy.pool import NullPool
 
 from app.core.config import DatabaseSettings, get_database_settings
+
+# Por proceso: nunca más de tres conexiones, incluso ante una ráfaga de pedidos.
+# pre_ping recupera conexiones cerradas por el pooler; recycle renueva las antiguas.
+POOL_OPTIONS = dict(pool_size=3, max_overflow=0, pool_timeout=5,
+                    pool_pre_ping=True, pool_recycle=240, pool_use_lifo=True)
 
 
 def build_engine(settings: DatabaseSettings | None = None):
@@ -24,7 +28,7 @@ def build_engine(settings: DatabaseSettings | None = None):
             "sslrootcert": settings.sslrootcert,
             "connect_timeout": settings.connect_timeout,
         },
-        poolclass=NullPool,
+        **POOL_OPTIONS,
         echo=False,
         hide_parameters=True,
     )

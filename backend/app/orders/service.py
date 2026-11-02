@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth.service import as_utc
 from app.orders.operational_date import operational_date, operational_day_bounds
 from app.orders.summaries import summary_data
-from app.orders.distance import unconfirmed_distances
+from app.orders.distance import unconfirmed_events
 
 from app.db.models import Cliente, DetallePedido, Entrega, HistorialPedido, Pedido, Producto, Repartidor, Restaurante, Usuario
 from app.orders.schemas import (
@@ -77,7 +77,7 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
         db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario,
                               tipo_evento="registro", estado="Nuevo", detalle=f'Registro del pedido. Distancia: {data.distancia_km} km.'))
         db.flush()
-        result = read_order(db, user, order.id_pedido)
+        result = _order_output(db, user, order, restaurant, client.nombre)
         db.commit()
         return result
     except IntegrityError:
@@ -156,7 +156,8 @@ def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: st
                       .order_by(Pedido.fecha_hora.desc(), Pedido.id_pedido.desc()).limit(limit).offset(offset)).all()
     extra = summary_data(db, [row[0].id_pedido for row in rows])
     from app.analytics.operational import owner_order_warnings
-    warnings = owner_order_warnings(db, user, [row[0].id_pedido for row in rows], reference_day=reference)
+    warnings = owner_order_warnings(db, user, [row[0].id_pedido for row in rows], reference_day=reference,
+                                   target_orders=[row[0] for row in rows])
     for oid, warning in warnings.items():
         extra[oid].update(warning)
     return OrderPage(pedidos=[order_summary(order, restaurant, client, since).model_copy(update=extra[order.id_pedido])
@@ -165,28 +166,37 @@ def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: st
 
 
 def read_order(db: Session, user: Usuario, order_id: int) -> OrderOutput:
-    row = db.execute(scoped_orders(user).add_columns(Restaurante.nombre, Cliente.nombre)
+    row = db.execute(scoped_orders(user).add_columns(Restaurante, Cliente.nombre)
                      .join(Restaurante, Restaurante.id_restaurante == Pedido.id_restaurante)
                      .where(Pedido.id_pedido == order_id)).first()
     if row is None:
         raise HTTPException(404, "Pedido no disponible.")
-    order, restaurant, client = row
+    return _order_output(db, user, *row)
+
+
+def _order_output(db, user, order, restaurant, client):
+    """Solo pedidos ya autorizados por read_order o create_order."""
+    order_id = order.id_pedido
     details = db.execute(select(DetallePedido.id_producto, Producto.nombre, DetallePedido.cantidad,
                                 DetallePedido.precio_unitario)
                          .join(Producto, Producto.id_producto == DetallePedido.id_producto)
                          .where(DetallePedido.id_pedido == order_id)
-                         .order_by(DetallePedido.id_detalle)).mappings()
+                         .order_by(DetallePedido.id_detalle)).mappings().all()
     history = db.scalars(select(HistorialPedido).where(HistorialPedido.id_pedido == order_id)
                          .order_by(HistorialPedido.fecha_hora, HistorialPedido.id_historial)).all()
     from app.orders.timing import order_times
     since, preparation_time, delivery_time = order_times(order, history)
     economy = None
-    known_distance = order_id not in unconfirmed_distances(db, [order_id])
+    known_distance = order_id not in unconfirmed_events(
+        (event.id_pedido, event.tipo_evento, event.detalle) for event in history)
+    delivery_row = db.execute(select(Entrega, Usuario.nombre).select_from(Entrega)
+        .join(Repartidor, Repartidor.id_repartidor == Entrega.id_repartidor)
+        .join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
+        .where(Entrega.id_pedido == order_id, Usuario.id_restaurante == order.id_restaurante)).first()
+    delivery = delivery_row[0] if delivery_row else None
     if user.rol == "propietario" and known_distance:
         from app.logistics.service import delivery_cost
-        from app.db.models import Entrega
-        rates = db.get(Restaurante, order.id_restaurante)
-        delivery = db.scalar(select(Entrega).where(Entrega.id_pedido == order_id))
+        rates = restaurant
         estimated = delivery_cost(rates, order)
         economy = {key: format(value, ".2f") for key, value in {
             "importe_productos": order.importe_total, "costo_productos": order.costo_total,
@@ -196,9 +206,12 @@ def read_order(db: Session, user: Usuario, order_id: int) -> OrderOutput:
         }.items()}
         if delivery:
             economy["costo_entrega_asignado"] = format(delivery.costo_repartidor, ".2f")
-    summary = order_summary(order, restaurant, client, since).model_copy(update=summary_data(db, [order_id])[order_id])
+    extra = summary_data(db, [order_id],
+        details=[(order_id, detail['cantidad'], detail['nombre']) for detail in details],
+        deliveries=[(order_id, delivery.id_entrega, delivery.id_repartidor, delivery_row[1], delivery.estado)] if delivery else [])
+    summary = order_summary(order, restaurant.nombre, client, since).model_copy(update=extra[order_id])
     from app.analytics.operational import owner_order_warnings
-    summary = summary.model_copy(update=owner_order_warnings(db, user, [order_id]).get(order_id, {}))
+    summary = summary.model_copy(update=owner_order_warnings(db, user, [order_id], target_orders=[order]).get(order_id, {}))
     return OrderOutput(**summary.model_dump(),
                        direccion_entrega=order.direccion_entrega, referencia_local=order.referencia_local,
                        zona_entrega=order.zona_entrega, distancia_km=order.distancia_km if known_distance else None,

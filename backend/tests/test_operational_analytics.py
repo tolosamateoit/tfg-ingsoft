@@ -77,6 +77,30 @@ class OperationalTests(unittest.TestCase):
         with Session(self.engine) as db:
             return test_analytics.historical_orders(db, days=42, count=84)
 
+    def test_targeted_warnings_equal_full_history_with_boundaries_and_couriers(self):
+        from app.analytics.operational import owner_order_warnings
+        self.history()
+        with Session(self.engine) as db:
+            for days in (110, 91, 90, 89, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1):
+                delivery(db, DAY - timedelta(days=days), duration=30)
+            delivery(db, DAY, duration=180)
+            delivery(db, DAY, duration=45, courier=3)
+            # Un viaje largo no se puede truncar a los eventos de los últimos 90 días.
+            delivery(db, DAY - timedelta(days=100), duration=100 * 24 * 60)
+            db.commit()
+            owner = db.get(Usuario, 7)
+            expected = owner_order_warnings(db, owner, None, reference_day=DAY)
+            orders = db.scalars(select(Pedido).where(Pedido.id_restaurante == 1)
+                                .order_by(Pedido.fecha_hora, Pedido.id_pedido)).all()
+            for targets in (orders[:3], orders[-6:], orders[30:40], orders[::9]):
+                ids = [o.id_pedido for o in targets]
+                for supplied in (None, targets):
+                    actual = owner_order_warnings(db, owner, ids, reference_day=DAY, target_orders=supplied)
+                    self.assertEqual(actual, {oid: expected[oid] for oid in ids})
+            self.assertEqual(owner_order_warnings(db, db.get(Usuario, 1), [1]), {})
+            self.assertEqual(owner_order_warnings(db, owner, [2, 999999], reference_day=DAY),
+                             {oid: {'advertencia_importe': None, 'advertencia_entrega': None} for oid in (2, 999999)})
+
     def dashboard(self, day=None):
         return self.client.get('/api/restaurantes/1/indicadores' + (f'?fecha={day}' if day else ''))
 

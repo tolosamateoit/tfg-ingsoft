@@ -119,9 +119,10 @@ def associations(baskets, names):
     return messages
 
 
-def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | None = None):
+def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | None = None,
+                       reference_day: date | None = None, history_orders=None):
     """Cálculo sin escrituras, también utilizable en verificación READ ONLY."""
-    day = operational_date(db, restaurant_id)
+    day = reference_day if reference_day is not None else operational_date(db, restaurant_id)
     if day is None:
         return ForecastOutput(estado='Historial insuficiente', dias_historial=0, pedidos_completados=0)
     if target_date is not None and not day <= target_date <= day + timedelta(days=7):
@@ -129,8 +130,11 @@ def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | N
     # Para prever la fecha operativa se excluye TODO ese día, aunque tenga ventas.
     history_end = min(day, target_date - timedelta(days=1)) if target_date else day
     cutoff = operational_day_bounds(history_end)[1]
-    orders = db.execute(select(Pedido.id_pedido, Pedido.fecha_hora).where(
-        Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Entregado', Pedido.fecha_hora < cutoff)).all()
+    if history_orders is None:
+        orders = db.execute(select(Pedido.id_pedido, Pedido.fecha_hora).where(
+            Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Entregado', Pedido.fecha_hora < cutoff)).all()
+    else:
+        orders = [row for row in history_orders if row.estado == 'Entregado' and as_utc(row.fecha_hora) < cutoff]
     start = min((as_utc(row.fecha_hora).astimezone(OPERATIONAL_ZONE).date() for row in orders), default=day)
     days = (history_end - start).days + 1 if orders else 0
     result = ForecastOutput(estado='Historial insuficiente', fecha_operativa=day,
@@ -190,9 +194,10 @@ def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | N
     return result
 
 
-def day_forecast(db: Session, restaurant_id: int, selected: date | None = None) -> DayForecastOutput:
+def day_forecast(db: Session, restaurant_id: int, selected: date | None = None, *,
+                 reference_day: date | None = None, history_orders=None) -> DayForecastOutput:
     """Vista de preparación sin escrituras; redondeo separado de la evaluación."""
-    day = operational_date(db, restaurant_id)
+    day = reference_day if reference_day is not None else operational_date(db, restaurant_id)
     if day is None:
         return DayForecastOutput(estado='Sin historial', aviso='Todavía no hay pedidos para estimar la demanda.')
     target = selected or day
@@ -201,7 +206,7 @@ def day_forecast(db: Session, restaurant_id: int, selected: date | None = None) 
     options = [dict(fecha=day + timedelta(days=i),
                     etiqueta=f'{weekdays[(day + timedelta(days=i)).weekday()]} {(day + timedelta(days=i)):%d/%m}')
                for i in range(8)]
-    calculated = calculate_forecast(db, restaurant_id, target_date=target)
+    calculated = calculate_forecast(db, restaurant_id, target_date=target, reference_day=day, history_orders=history_orders)
     result = DayForecastOutput(estado=calculated.estado, fecha_operativa=day, fecha_seleccionada=target,
                                fechas_disponibles=options, evaluacion=calculated)
     if not calculated.predicciones:

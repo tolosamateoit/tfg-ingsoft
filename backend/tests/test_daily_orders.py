@@ -190,3 +190,25 @@ class DailyOperationPostgreSQLTests(DailyOperationTests):
         self.assertEqual(sorted(statuses), [200, 409])
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(Entrega).where(Entrega.id_repartidor == 3)), 1)
+
+    def test_parallel_selected_assignment_same_order_with_different_couriers(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from fastapi.testclient import TestClient
+        with Session(self.engine) as db:
+            db.get(Pedido, 1).estado = 'Listo'
+            db.commit()
+        barrier = Barrier(2)
+        def assign(courier):
+            with TestClient(self.app) as client:
+                client.cookies.update(self.client.cookies)
+                barrier.wait(timeout=5)
+                return client.post(BASE + '/entregas/asignar', headers=HEADERS,
+                    json={'id_pedido': 1, 'id_repartidor': courier, 'version': 0}).status_code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            statuses = list(pool.map(assign, [1, 3]))
+        self.assertEqual(sorted(statuses), [200, 409])
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(Entrega).where(Entrega.id_pedido == 1)), 1)
+            self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido).where(
+                HistorialPedido.id_pedido == 1, HistorialPedido.tipo_evento == 'asignacion')), 1)

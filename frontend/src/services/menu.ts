@@ -1,4 +1,4 @@
-import { cacheScope, invalidateMutation } from './queryCache';
+import { cacheScope, confirmMutation } from './queryCache';
 import { sessionHeaders } from './session';
 export type Product = {
   id_producto: number;
@@ -37,7 +37,7 @@ async function request<T>(restaurant: number, path: string, method = 'GET', body
             : 'No se pudo completar la operación. Volvé a intentar.');
   }
   const result = await response.json() as T;
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) await invalidateMutation(`restaurantes/${restaurant}/${path}`, requestScope);
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) await confirmMutation(`restaurantes/${restaurant}/${path}`, requestScope, result);
   return result;
 }
 
