@@ -64,6 +64,8 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
         cost = sum((by_id[item.id_producto].costo_unitario * item.cantidad for item in data.detalles), Decimal(0))
     if max(amount, cost) > Decimal("9999999999999999.99"):
         raise HTTPException(422, "El importe o costo del pedido supera el máximo permitido.")
+    from app.menu.availability import validate_order_stock
+    validate_order_stock(db, restaurant_id, data.detalles)
     order = Pedido(id_restaurante=restaurant_id, id_cliente=client.id_cliente, estado="Nuevo",
                    direccion_entrega=data.direccion_entrega, referencia_local=data.referencia_local or None,
                    zona_entrega=data.zona_entrega or None, medio_pago=data.medio_pago, estado_pago="pendiente",
@@ -111,8 +113,10 @@ def customer_menu(db: Session, restaurant_id: int) -> CustomerMenuOutput:
     products = db.execute(select(Producto.id_producto, Producto.nombre, Producto.precio, Producto.descripcion, Producto.imagen_url)
                           .where(Producto.id_restaurante == restaurant_id, Producto.activo.is_(True))
                           .order_by(Producto.nombre, Producto.id_producto)).mappings()
+    from app.menu.availability import product_availability
+    available = product_availability(db, restaurant_id)
     return CustomerMenuOutput(restaurante=RestaurantOutput(**row),
-                              productos=[MenuItemOutput(**product) for product in products])
+        productos=[MenuItemOutput(**product, disponible_stock=available.get(product['id_producto'], False)) for product in products])
 
 
 def scoped_orders(user: Usuario):

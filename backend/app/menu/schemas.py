@@ -47,6 +47,7 @@ class ProductOutput(ProductInput):
     model_config = ConfigDict(from_attributes=True)
     id_producto: int
     id_restaurante: int
+    disponible_stock: bool = False
 
     @field_serializer("precio", "costo_unitario")
     def money_as_text(self, value: Decimal) -> str:

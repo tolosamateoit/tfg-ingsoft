@@ -23,6 +23,8 @@ from app.orders.summaries import summary_data
 class OperatingOrder(OrderSummary):
     version: int
     distancia_km: Decimal | None
+    direccion_entrega: str
+    referencia_local: str | None
     prioridad: PriorityOutput | None = None
 
 
@@ -45,6 +47,7 @@ def operating_day(db, user, restaurant_id, limit=20, offset=0):
     day = operational_date(db, restaurant_id)
     now = engine.priority_time(db)
     result = OperatingDay(fecha_operativa=day, actualizada_en=now, limit=limit, offset=offset)
+    result.repartidores = list_couriers(db, user).repartidores
     if day is None:
         return result
     start, end = operational_day_bounds(day)
@@ -72,10 +75,10 @@ def operating_day(db, user, restaurant_id, limit=20, offset=0):
         summary.update(details[order.id_pedido])
         summary.update(warnings.get(order.id_pedido, {}))
         by_order[order.id_pedido] = OperatingOrder(**summary, version=versions.get(order.id_pedido, 0),
-            distancia_km=order.distancia_km if order.id_pedido not in unknown else None, prioridad=by_id.get(order.id_pedido))
+            distancia_km=order.distancia_km if order.id_pedido not in unknown else None, prioridad=by_id.get(order.id_pedido),
+            direccion_entrega=order.direccion_entrega, referencia_local=order.referencia_local)
     result.activos = [by_order[o.id_pedido] for o in ranking]
     result.listos = [by_order[o.id_pedido] for o in ready_ranking]
     result.en_entrega = [by_order[r[0].id_pedido] for r in active if r[0].estado in {'Asignado', 'En camino'}]
     result.finalizados = [by_order[r[0].id_pedido] for r in closed]
-    result.repartidores = list_couriers(db, user).repartidores
     return result

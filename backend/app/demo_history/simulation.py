@@ -32,7 +32,7 @@ def delay(order_id, state):
     return 15 + (order_id + len(state)) % 11
 
 
-def advance(db, order_id):
+def advance(db, order_id, *, expected_state=None, ready_ids=None):
     from app.orders.service import lock_order_relations
     from app.preparation.service import change_preparation
     from app.preparation.schemas import PreparationInput
@@ -42,6 +42,8 @@ def advance(db, order_id):
     order = db.get(Pedido, order_id, with_for_update=True)
     if order is None or order.estado not in ACTIVE:
         return None
+    if expected_state is not None and order.estado != expected_state:
+        return order.estado
     actor = db.scalar(select(Usuario).where(Usuario.id_restaurante == order.id_restaurante,
         Usuario.rol == 'propietario', Usuario.activo.is_(True)).order_by(Usuario.id_usuario).limit(1))
     if actor is None:
@@ -52,7 +54,8 @@ def advance(db, order_id):
             estado='En preparación' if order.estado == 'Nuevo' else 'Listo', version=version))
     elif order.estado == 'Listo':
         # El lote automático solo incluye pedidos nuevos marcados para esta demo.
-        assign_ready_orders(db, actor, order.id_restaurante, demo_only=True)
+        assign_ready_orders(db, actor, order.id_restaurante, demo_only=True,
+                            eligible_order_ids=ready_ids if ready_ids is not None else [order_id])
     else:
         delivery = db.scalar(select(Entrega).where(Entrega.id_pedido == order_id))
         if delivery:
@@ -79,20 +82,23 @@ def run_once(stop):
                                     HistorialPedido.tipo_evento == 'registro',
                                     HistorialPedido.detalle.endswith(f'[{MARKER}]')).exists())).all()
                         for oid, state in rows:
-                            pending.setdefault(oid, now + delay(oid, state))
+                            if oid not in pending or pending[oid][0] != state:
+                                pending[oid] = (state, now + delay(oid, state))
                         discovery = now + 30
-                    for oid, due in list(pending.items()):
+                    for oid, (expected, due) in list(pending.items()):
                         if now < due:
                             continue
+                        ready_ids = [key for key, (state, deadline) in pending.items()
+                                     if state == 'Listo' and deadline <= now]
                         try:
                             with Session(connection, expire_on_commit=False) as db:
-                                state = advance(db, oid)
+                                state = advance(db, oid, expected_state=expected, ready_ids=ready_ids)
                             if state in ACTIVE:
-                                pending[oid] = monotonic() + delay(oid, state)
+                                pending[oid] = (state, monotonic() + delay(oid, state))
                             else:
                                 pending.pop(oid, None)
                         except HTTPException:
-                            pending[oid] = monotonic() + 30
+                            pending[oid] = (expected, monotonic() + 30)
                     stop.wait(1)
             finally:
                 connection.rollback()

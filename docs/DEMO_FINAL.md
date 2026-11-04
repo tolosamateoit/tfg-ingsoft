@@ -32,6 +32,9 @@ invalidan y los accesos locales se actualizan al finalizar.
   Se admite intervención manual; stock insuficiente, distancia no confirmada o
   falta de repartidor dejan el pedido esperando. No se inventan existencias ni
   kilómetros. El estado interno Asignado se conserva antes de En camino.
+- Cada estado tiene su propio plazo de simulación. El despacho automático solo
+  incluye pedidos cuyo plazo de listo ya venció; si una acción manual cambió el
+  estado, el worker vuelve a iniciar el plazo correspondiente.
 - El despacho automático toma primero el mayor puntaje de prioridad y después
   el repartidor disponible con mayor proporción de entregas exitosas. Sin
   antecedentes se considera tasa cero; los empates se ordenan por nombre.
@@ -50,7 +53,15 @@ invalidan y los accesos locales se actualizan al finalizar.
   equivalencia antes de preparar un producto nuevo.
 - Stock ofrece agregar y restar con cantidades positivas en pantalla; internamente
   conserva reposición, ajuste y consumo. Tanto ajustes como preparación rechazan
-  resultados negativos.
+  resultados negativos. El motivo es opcional y se conserva el usuario responsable.
+- Los pedidos nuevos reservan las cantidades de sus recetas hasta su preparación
+  o cancelación. La disponibilidad descuenta esas reservas y suma los insumos
+  compartidos por productos del mismo pedido. Movimientos y cambios de receta
+  no pueden comprometer lo ya reservado. Los productos sin receta o equivalencia
+  quedan no disponibles. El estado administrativo permanece independiente.
+- El detalle reconstruye el saldo anterior y posterior de cada consumo a partir
+  del stock y los movimientos posteriores por orden de registro. No modifica
+  movimientos históricos; presupone que los cambios de stock están registrados.
 
 El esquema y la autorización continúan siendo multi-restaurante. Ningún servicio
 de negocio selecciona el restaurante 1 por defecto ni fija límites de usuarios.

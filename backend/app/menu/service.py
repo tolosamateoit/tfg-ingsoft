@@ -71,12 +71,25 @@ def save_recipe(db: Session, restaurant_id: int, product_id: int, data: RecipeIn
     if any(item.unidad != by_id[item.id_insumo].unidad for item in data.detalles):
         # No hay conversiones de unidades definidas en el prototipo.
         raise HTTPException(422, "Usá la unidad registrada de cada insumo.")
+    from app.db.models import DetallePedido, Pedido
+    has_pending = db.scalar(select(DetallePedido.id_detalle).join(Pedido).where(
+        DetallePedido.id_producto == product_id, Pedido.id_restaurante == restaurant_id,
+        Pedido.estado == 'Nuevo').limit(1)) is not None
+    if has_pending and not data.detalles:
+        raise HTTPException(409, 'Hay pedidos pendientes con este producto; su receta no puede quedar vacía.')
     try:
         db.execute(delete(RecetaDetalle).where(RecetaDetalle.id_producto == product_id))
         db.add_all([RecetaDetalle(id_producto=product_id, **item.model_dump()) for item in data.detalles])
         if not data.detalles:
             product_in_restaurant(db, restaurant_id, product_id).costo_unitario = Decimal(0)
         db.flush()
+        if has_pending:
+            from app.menu.availability import reserved_ingredients
+            reserved = reserved_ingredients(restaurant_id)
+            insufficient = db.scalar(select(Insumo.id_insumo).join(reserved, reserved.c.id_insumo == Insumo.id_insumo)
+                .where(Insumo.id_restaurante == restaurant_id, Insumo.stock_actual < reserved.c.reservado).limit(1))
+            if insufficient:
+                raise HTTPException(409, 'La receta requiere más stock del disponible para los pedidos pendientes.')
         refresh_recipe_costs(db, restaurant_id)
         result = recipe_output(db, restaurant_id, product_id)
         db.commit()

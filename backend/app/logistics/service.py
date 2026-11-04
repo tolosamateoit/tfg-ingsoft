@@ -28,7 +28,7 @@ def delivery_cost(restaurant: Restaurante, order: Pedido) -> Decimal:
     return cost
 
 
-def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selection: AssignmentInput | None = None, *, demo_only=False) -> AssignmentOutput:
+def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selection: AssignmentInput | None = None, *, demo_only=False, eligible_order_ids=None) -> AssignmentOutput:
     lock_order_relations(db)
     restaurant = db.scalar(select(Restaurante).where(Restaurante.id_restaurante == restaurant_id).with_for_update(read=True))
     if restaurant is None:
@@ -40,6 +40,8 @@ def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selectio
         ready_query = ready_query.where(exists(select(HistorialPedido.id_historial).where(
             HistorialPedido.id_pedido == Pedido.id_pedido, HistorialPedido.tipo_evento == 'registro',
             HistorialPedido.detalle.endswith('[demo_simulacion]'))))
+    if eligible_order_ids is not None:
+        ready_query = ready_query.where(Pedido.id_pedido.in_(eligible_order_ids))
     if selection is not None:
         ready_query = ready_query.where(Pedido.id_pedido == selection.id_pedido)
     ready = db.scalars(ready_query

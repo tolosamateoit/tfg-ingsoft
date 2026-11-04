@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import router as auth_router
 from app.api.menu import router as menu_router
-from app.db.models import Insumo, MovimientoStock, Producto, RecetaDetalle
+from app.db.models import Insumo, MovimientoStock, Pedido, Producto, RecetaDetalle
 from app.main import private_responses, validation_error
 from tests.auth_support import HEADERS, PASSWORD, override_database
 from tests.menu_support import sqlite_menu_engine
@@ -149,6 +149,10 @@ class MenuApiTests(unittest.TestCase):
         self.assertEqual(by_id[1]["unidad"], "kg")
         self.assertEqual(self.put_recipe({"detalles": [RECIPE["detalles"][0]]}).status_code, 200)
         self.assertEqual(len(self.client.get(f"{BASE}/productos/1/receta").json()["detalles"]), 1)
+        self.assertEqual(self.put_recipe({"detalles": []}).status_code, 409)
+        with Session(self.engine) as db:
+            db.get(Pedido, 1).estado = 'Cancelado'
+            db.commit()
         self.assertEqual(self.put_recipe({"detalles": []}).status_code, 200)
         self.assertEqual(self.client.get(f"{BASE}/productos/1/receta").json()["detalles"], [])
 

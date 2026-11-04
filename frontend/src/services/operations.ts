@@ -24,7 +24,7 @@ export type Stock = { id_insumo: number; nombre: string; unidad: string; stock_a
 export type Preparation = {
   id_pedido: number; estado: string; version: number;
   historial: { id_historial: number; fecha_hora: string; usuario: string; estado: string; tipo_evento: string; detalle: string | null }[];
-  movimientos: { id_movimiento: number; id_insumo: number; nombre: string; unidad: string; cantidad: string; fecha_hora: string; motivo: string | null }[];
+  movimientos: { id_movimiento: number; id_insumo: number; nombre: string; unidad: string; cantidad: string; stock_antes: string; stock_despues: string; fecha_hora: string; motivo: string | null }[];
 };
 
 export type Courier = { id_repartidor: number; nombre: string; zona: string | null; activo: boolean; estado_disponibilidad: string; ultimo_cambio: string | null; entrega_activa: boolean };

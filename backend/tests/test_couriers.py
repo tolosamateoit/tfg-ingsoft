@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.auth import router as auth_router
 from app.api.couriers import router as couriers_router
 from app.api.orders import router as orders_router
-from app.db.models import HistorialRepartidor, Repartidor, Usuario
+from app.db.models import HistorialRepartidor, RecetaDetalle, Repartidor, Usuario
 from app.main import validation_error
 from tests.auth_support import HEADERS, PASSWORD, override_database
 from tests.menu_support import sqlite_menu_engine
@@ -63,6 +63,9 @@ class CourierTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 1)
 
     def test_availability_changes_immediately_control_hu03_confirmation(self):
+        with Session(self.engine) as db:
+            db.add(RecetaDetalle(id_producto=1, id_insumo=1, cantidad=1, unidad='kg'))
+            db.commit()
         for uid in (5, 9):
             self.sign_in(uid)
             self.assertEqual(self.client.put('/api/repartidores/me', headers=HEADERS, json={'estado_disponibilidad':'No disponible'}).status_code, 200)

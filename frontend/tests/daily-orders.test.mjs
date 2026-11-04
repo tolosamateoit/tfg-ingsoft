@@ -66,6 +66,10 @@ test('el dia muestra tarjetas agrupadas y prioridades consecutivas del backend',
   assert.match(html,/Finalizados y rechazados/);
   assert.match(html,/Prioridad <strong>1/);
   assert.match(html,/Prioridad <strong>2/);
+  assert.match(html,/Pedidos del día/);
+  assert.match(html,/Disponibilidad de repartidores/);
+  assert.match(html,/courier-available/);
+  assert.match(html,/courier-unavailable/);
 });
 
 test('cada estado muestra solo sus acciones validas y no inventa distancia pendiente',()=>{
@@ -79,6 +83,9 @@ test('cada estado muestra solo sus acciones validas y no inventa distancia pendi
   assert.match(card(data.day.listos[0]),/Elegí un repartidor/);
   assert.match(card(data.day.listos[0]),/¿Por qué esta prioridad/);
   assert.match(card(data.day.en_entrega[0]),/Iniciar entrega/);
+  const address = card({...fresh, direccion_entrega:'Belgrano 123', referencia_local:'Puerta verde'});
+  assert.match(address,/Belgrano 123/);
+  assert.match(address,/<small>Puerta verde<\/small>/);
   assert.doesNotMatch(card(data.day.finalizados[0]),/Confirmar pedido|Rechazar|Enviar a entrega|Prioridad/);
   assert.match(card(fresh,true),/disabled=""/);
 });

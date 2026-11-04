@@ -64,6 +64,9 @@ class OrderHistoryTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/pedidos?periodo=historial").json()["total"], 6)
 
     def test_real_creation_keeps_history_and_summaries_match_delivery_and_detail(self):
+        with Session(self.engine) as db:
+            db.add(RecetaDetalle(id_producto=1, id_insumo=1, cantidad=1, unidad='kg'))
+            db.commit()
         before = self.client.get("/api/pedidos?periodo=historial").json()
         saved = self.client.post(test_orders.CREATE, headers=HEADERS, json=test_orders.ORDER)
         self.assertEqual(saved.status_code, 201, saved.text)

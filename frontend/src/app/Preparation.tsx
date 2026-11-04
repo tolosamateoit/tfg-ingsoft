@@ -2,7 +2,7 @@ import { useApiQuery } from '../services/useApiQuery';
 import { formatDateTime } from '../services/format';
 import { displayText, Status } from './ui';
 import { useEffect, useState } from 'react';
-import { operationRequest, type Preparation as PreparationData, type Stock } from '../services/operations';
+import { operationRequest, type Preparation as PreparationData } from '../services/operations';
 import { OrderError } from '../services/orders';
 
 type Props = { restaurant: number; order: number; onSessionExpired: () => void; onChanged: (estado: string) => void };
@@ -20,14 +20,11 @@ export default function Preparation({ restaurant, order, onSessionExpired, onCha
   }
 
   const query = useApiQuery<PreparationData>(path, (signal) => operationRequest(path, undefined, signal), onSessionExpired);
-  const stockPath = `restaurantes/${restaurant}/stock`;
-  const supplies = useApiQuery<Stock[]>(stockPath, (signal) => operationRequest(stockPath, undefined, signal), onSessionExpired);
   const data = query.data;
-  const stock = supplies.data ?? [];
-  const queryError = query.error?.message ?? supplies.error?.message;
+  const queryError = query.error?.message;
   useEffect(() => { if (data) onChanged(data.estado); }, [data?.estado]);
   async function load() {
-    await Promise.all([query.refetch({cancelRefetch:false,throwOnError:true}), supplies.refetch({cancelRefetch:false,throwOnError:true})]);
+    await query.refetch({cancelRefetch:false,throwOnError:true});
   }
   async function change(estado: string, nueva_preparacion = false) {
     if (!data) return;
@@ -57,13 +54,10 @@ export default function Preparation({ restaurant, order, onSessionExpired, onCha
         <button disabled={busy || !reason.trim()} onClick={() => void change('En preparación', true)}>Confirmar nueva preparación y consumo</button>
       </div>}
       <h4>Historial del pedido</h4>
-      <ul className="timeline">{data.historial.map((row) => <li key={row.id_historial}>{formatDateTime(row.fecha_hora)} · {displayText(row.usuario)} · {row.estado} · {displayText(row.detalle)}</li>)}</ul>
+      <ul className="timeline">{data.historial.map((row) => <li key={row.id_historial}>{formatDateTime(row.fecha_hora)} · {displayText(row.usuario)} · {row.estado}</li>)}</ul>
       <h4>Movimientos de consumo de este pedido</h4>
       {!data.movimientos.length && <p>Todavía no se registró consumo.</p>}
-      <ul>{data.movimientos.map((row) => <li key={row.id_movimiento}>{displayText(row.nombre)}: {row.cantidad} {row.unidad} · {formatDateTime(row.fecha_hora)} · {displayText(row.motivo)}</li>)}</ul>
+      <ul>{data.movimientos.map((row) => <li key={row.id_movimiento}>{displayText(row.nombre)}: {Number(row.stock_antes).toLocaleString('es-AR', {maximumFractionDigits: 6})} {row.unidad} antes → {Number(row.stock_despues).toLocaleString('es-AR', {maximumFractionDigits: 6})} {row.unidad} después</li>)}</ul>
     </>}
-    <h4>Stock actual del restaurante</h4>
-    {stock.some((row) => Number(row.stock_actual) < 0) && <p role="status" className="auth-error">Hay insumos con stock negativo.</p>}
-    <ul>{stock.map((row) => <li key={row.id_insumo}>{displayText(row.nombre)}: {row.stock_actual} {row.unidad}</li>)}</ul>
   </section>;
 }

@@ -24,6 +24,7 @@ export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, on
     {confirmedState && <p role="status">Cambio guardado. Actualizando pedido…</p>}
     <p className="daily-order-time">{formatDateTime(row.fecha_hora)}</p>
     <p className="daily-order-products">{row.resumen_productos || 'Sin productos registrados'}</p>
+    <p className="daily-order-address">{row.direccion_entrega}{row.referencia_local && <small>{row.referencia_local}</small>}</p>
     <div className="daily-order-info"><strong>{formatMoney(row.importe_total)}</strong>
       {row.repartidor && <span>Repartidor: {row.repartidor}<WarningBadge message={row.advertencia_entrega}/></span>}</div>
     {row.prioridad && <details className="daily-order-why"><summary>¿Por qué esta prioridad?</summary><PriorityExplanation priority={row.prioridad}/></details>}
@@ -70,9 +71,12 @@ export function DailyOrdersView({data, busy, pending = {}, onPage, ...actions}: 
     row={row} couriers={data.repartidores.filter(c => c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa)} busy={busy || Boolean(pending[row.id_pedido])}
     confirmedState={pending[row.id_pedido]?.state} {...actions}/>)}</div>;
   return <div className="daily-orders-board" aria-busy={busy}>
-    <div className="daily-orders-caption"><p>{data.fecha_operativa ? `Día operativo: ${formatCalendarDate(data.fecha_operativa)}` : 'Sin pedidos registrados'}</p>
-      <span>Actualización automática cada 30 segundos</span></div>
-    <div className="courier-availability" aria-label="Disponibilidad de repartidores">{data.repartidores.map(c => <span key={c.id_repartidor} style={{color:c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa ? '#137547' : '#b42318'}}>● {c.nombre} · {c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa ? 'Disponible' : 'No disponible'} </span>)}</div>
+    <div className="daily-orders-caption"><div><h3>Pedidos del día</h3><p>{data.fecha_operativa ? `Día operativo: ${formatCalendarDate(data.fecha_operativa)}` : 'Sin pedidos registrados'}</p>
+      <span>Actualización automática cada 10 segundos</span></div>
+      <div className="courier-availability" aria-label="Disponibilidad de repartidores">{data.repartidores.map(c => {
+        const available = c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa;
+        return <span key={c.id_repartidor} className={available ? 'courier-available' : 'courier-unavailable'}>● {c.nombre} · {available ? 'Disponible' : 'No disponible'}</span>;
+      })}</div></div>
     <section aria-labelledby="orders-active-title"><h3 id="orders-active-title">Para atender primero <span>{data.activos.length}</span></h3>
       {data.activos.length ? cards(data.activos) : <p className="daily-orders-empty">¡Todo al día! No hay pedidos por preparar.</p>}</section>
     {data.listos.length > 0 && <section aria-labelledby="orders-ready-title"><h3 id="orders-ready-title">Listos para entregar <span>{data.listos.length}</span></h3>{cards(data.listos)}</section>}
@@ -100,14 +104,14 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
   }
   const path = `restaurantes/${restaurant}/pedidos/operacion?offset=${offset}`;
   const query = useApiQuery<OperatingDay>(path,
-    (signal) => operationRequest(path, undefined, signal, 'GET', 30000), onSessionExpired, {interval:30_000});
+    (signal) => operationRequest(path, undefined, signal, 'GET', 30000), onSessionExpired, {interval:10_000});
   const data = query.data;
   useEffect(() => { if (refresh) void query.refetch({cancelRefetch:false}); }, [refresh]);
   async function load() { await query.refetch({cancelRefetch:false, throwOnError:true}); }
   useEffect(() => {
     if (data && offset > 0 && offset >= data.total_finalizados) setOffset(0);
   }, [data, offset]);
-  useEffect(() => { setError(query.error?.message ?? ''); }, [query.error]);
+  useEffect(() => { if (query.error) setError(query.error.message); }, [query.error]);
   useEffect(() => {
     const revision = queryClient.getQueryState(apiKey(path))?.dataUpdateCount ?? 0;
     setPending(current => Object.fromEntries(Object.entries(current).filter(([, row]) => row.revision >= revision)));
@@ -125,6 +129,7 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
         }}));
       }
       setRejecting(null);
+      await load();
     }
     catch(failure) { failed(failure); setRejecting(null); try { await load(); } catch { /* Se conserva el error de la acción y la última lectura. */ } }
     finally { locked.current = false; setBusy(false); }

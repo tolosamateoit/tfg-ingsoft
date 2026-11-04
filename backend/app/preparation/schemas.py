@@ -38,8 +38,10 @@ class ConsumptionOutput(BaseModel):
     cantidad: Decimal
     fecha_hora: datetime
     motivo: str | None
+    stock_antes: Decimal
+    stock_despues: Decimal
 
-    @field_serializer("cantidad")
+    @field_serializer("cantidad", "stock_antes", "stock_despues")
     def quantity(self, value: Decimal) -> str:
         return format(value, ".6f")
 

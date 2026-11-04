@@ -148,7 +148,7 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
   const [notice, setNotice] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
 
-  const catalog = useApiQuery(`restaurantes/${restaurant}/productos`, (signal) => listProducts(restaurant, signal), onSessionExpired);
+  const catalog = useApiQuery(`restaurantes/${restaurant}/productos`, (signal) => listProducts(restaurant, signal), onSessionExpired, {interval:30_000});
   const supplies = useApiQuery(`restaurantes/${restaurant}/insumos`, (signal) => listIngredients(restaurant, signal), onSessionExpired);
   const products = catalog.data ?? [];
   const ingredients = supplies.data ?? [];
@@ -184,7 +184,7 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
         {products.map((product) => <article className="product-card catalog-product" key={product.id_producto}>
           <FoodPhoto name={product.nombre} src={product.imagen_url}/>
           {product.descripcion && <p>{product.descripcion}</p>}
-          <div className="product-title"><h3>{product.nombre}</h3><span className={`product-state ${product.activo ? 'product-state--active' : ''}`}>{product.activo ? 'Activo' : 'Inactivo'}</span></div>
+          <div className="product-title"><h3>{product.nombre}</h3><span className={`product-state ${!product.activo ? '' : product.disponible_stock ? 'product-state--active' : 'product-state--unavailable'}`}>{!product.activo ? 'Inactivo' : product.disponible_stock ? 'Activo' : 'No disponible'}</span></div>
           <dl><dt>Precio de venta</dt><dd>{formatMoney(product.precio)}</dd><dt>Costo unitario</dt><dd>{formatMoney(product.costo_unitario)}</dd></dl>
           <div className="menu-actions">
             <button type="button" disabled={editor !== null || loading} aria-label={`Editar ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product', product }); }}>Editar</button>

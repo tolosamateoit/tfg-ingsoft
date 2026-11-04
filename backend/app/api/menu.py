@@ -10,6 +10,7 @@ from app.db.models import Insumo, MovimientoStock, Producto, Usuario
 from app.menu.inventory import IngredientInput, MovementInput, record_movement, save_ingredient
 from app.menu.schemas import IngredientOutput, ProductInput, ProductOutput, RecipeInput, RecipeOutput
 from app.menu.service import create_product, product_in_restaurant, recipe_output, save_recipe, update_product
+from app.menu.availability import product_availability
 
 router = APIRouter(prefix="/restaurantes/{id_restaurante}", tags=["Menú y recetas"])
 RestaurantId = Annotated[int, Path(gt=0)]
@@ -19,8 +20,10 @@ MenuUser = Annotated[Usuario, Depends(require_restaurant("personal", "propietari
 
 @router.get("/productos", response_model=list[ProductOutput])
 def products(id_restaurante: RestaurantId, db: DB, user: MenuUser):
-    return db.scalars(select(Producto).where(Producto.id_restaurante == id_restaurante)
+    rows = db.scalars(select(Producto).where(Producto.id_restaurante == id_restaurante)
                       .order_by(Producto.nombre, Producto.id_producto)).all()
+    available = product_availability(db, id_restaurante)
+    return [ProductOutput.model_validate(row).model_copy(update={'disponible_stock': available.get(row.id_producto, False)}) for row in rows]
 
 
 @router.post("/productos", response_model=ProductOutput, status_code=201)

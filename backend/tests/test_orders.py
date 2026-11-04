@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import router as auth_router
 from app.api.orders import router as orders_router
-from app.db.models import DetallePedido, Entrega, HistorialPedido, Insumo, MovimientoStock, Pedido, Producto, Repartidor, Restaurante, Usuario
+from app.db.models import DetallePedido, Entrega, HistorialPedido, Insumo, MovimientoStock, Pedido, Producto, RecetaDetalle, Repartidor, Restaurante, Usuario
 from tests.auth_support import HEADERS, PASSWORD, override_database
 from tests.menu_support import sqlite_menu_engine
 
@@ -56,7 +56,7 @@ class OrderReadTests(unittest.TestCase):
         first = self.client.get("/api/restaurantes/1/menu")
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual([p["id_producto"] for p in first.json()["productos"]], [1])
-        self.assertEqual(set(first.json()["productos"][0]), {"id_producto", "nombre", "precio", "descripcion", "imagen_url"})
+        self.assertEqual(set(first.json()["productos"][0]), {"id_producto", "nombre", "precio", "descripcion", "imagen_url", "disponible_stock"})
         self.assertEqual(self.client.get("/api/restaurantes/2/menu").json()["productos"], [])
         self.assertEqual(self.client.get("/api/restaurantes/999/menu").status_code, 404)
 
@@ -130,8 +130,15 @@ class OrderReadTests(unittest.TestCase):
             self.assertEqual(self.client.get(path).status_code, 401)
 
     def post_order(self, data=None, user=1):
+        payload = ORDER if data is None else data
+        with Session(self.engine) as db:
+            for item in payload.get('detalles', []):
+                product = db.get(Producto, item.get('id_producto'))
+                if product is not None and product.id_restaurante == 1 and not db.scalar(select(RecetaDetalle.id_producto).where(RecetaDetalle.id_producto == product.id_producto).limit(1)):
+                    db.add(RecetaDetalle(id_producto=product.id_producto, id_insumo=1, cantidad=Decimal('.1'), unidad='kg'))
+            db.commit()
         self.sign_in(user)
-        return self.client.post(CREATE, headers=HEADERS, json=ORDER if data is None else data)
+        return self.client.post(CREATE, headers=HEADERS, json=payload)
 
     def test_create_one_product_with_server_totals_and_initial_history(self):
         response = self.post_order()

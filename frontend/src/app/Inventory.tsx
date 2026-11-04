@@ -74,7 +74,7 @@ export default function Inventory({ restaurant, onSessionExpired }: Props) {
       <form className="menu-form" onSubmit={(event) => void save(event)}><fieldset disabled={busy}>
         {moving ? <><label htmlFor="stock-type">Tipo</label><select id="stock-type" name="tipo"><option value="reposicion">Agregar stock (+)</option><option value="restar">Restar stock (−)</option></select>
           <label htmlFor="stock-qty">Cantidad a sumar o restar ({moving.unidad})</label><input id="stock-qty" name="cantidad" type="number" min="0.000001" step="0.000001" required />
-          <label htmlFor="stock-reason">Motivo</label><input id="stock-reason" name="motivo" required maxLength={500} />
+          <label htmlFor="stock-reason">Motivo (opcional)</label><input id="stock-reason" name="motivo" maxLength={500} />
         </> : <><label htmlFor="stock-name">Nombre</label><input id="stock-name" name="nombre" required maxLength={150} defaultValue={editor && editor !== 'new' ? editor.nombre : ''}/>
           <label htmlFor="stock-unit">Unidad de medida</label><select id="stock-unit" name="unidad" required defaultValue={editor && editor !== 'new' ? editor.unidad : 'unidad'}><option value="unidad">Unidad</option><option value="kg">Kilogramo</option><option value="l">Litro</option></select>
           <label htmlFor="stock-cost">Costo unitario</label><input id="stock-cost" name="costo" type="number" min="0" step="0.01" required defaultValue={editor && editor !== 'new' ? editor.costo_unitario : '0'}/>

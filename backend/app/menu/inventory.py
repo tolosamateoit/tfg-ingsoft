@@ -24,7 +24,7 @@ class IngredientInput(InputModel):
 class MovementInput(InputModel):
     tipo: Literal["reposicion", "ajuste"]
     cantidad: StockQuantity
-    motivo: str = Field(min_length=1, max_length=500)
+    motivo: str = Field(default='', max_length=500)
 
     @model_validator(mode="after")
     def valid_quantity(self):
@@ -64,10 +64,16 @@ def record_movement(db: Session, restaurant_id: int, ingredient_id: int, data: M
     row = ingredient(db, restaurant_id, ingredient_id)
     if row.stock_actual + data.cantidad < 0:
         raise HTTPException(409, 'No hay stock suficiente para restar esa cantidad.')
+    if data.cantidad < 0:
+        from app.menu.availability import reserved_ingredients
+        reserved = reserved_ingredients(restaurant_id)
+        held = db.scalar(select(reserved.c.reservado).where(reserved.c.id_insumo == ingredient_id)) or Decimal(0)
+        if row.stock_actual + data.cantidad < held:
+            raise HTTPException(409, 'Ese stock está reservado para pedidos pendientes.')
     if abs(row.stock_actual + data.cantidad) > Decimal("999999999999.999999"):
         raise HTTPException(422, "El stock resultante supera el rango permitido.")
     row.stock_actual += data.cantidad
     db.add(MovimientoStock(id_insumo=ingredient_id, tipo=data.tipo, cantidad=data.cantidad,
-                          motivo=f"Usuario #{actor_id}: {data.motivo}"))
+                          motivo=f"Usuario #{actor_id}" + (f": {data.motivo}" if data.motivo else '')))
     db.commit()
     return row

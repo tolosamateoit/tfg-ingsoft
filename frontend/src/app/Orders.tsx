@@ -4,7 +4,7 @@ import { formatDistance } from '../services/format';
 import { useEffect, useState, type FormEvent } from 'react';
 import { listProducts } from '../services/menu';
 import { formatMoney } from '../services/menu';
-import { OrderError, orderRequest, type CustomerMenu, type Order, type OrderInput, type Restaurant } from '../services/orders';
+import { OrderError, orderRequest, type CustomerMenu, type MenuItem, type Order, type OrderInput, type Restaurant } from '../services/orders';
 import OrderListing from './OrderListing';
 import WarningBadge from './WarningBadge';
 import Preparation from './Preparation';
@@ -12,6 +12,14 @@ import DeliveryTracking from './DeliveryTracking';
 import { Dialog, FoodPhoto, StateClock, displayText } from './ui';
 
 type Props = { restaurant: number | null; view?: 'list' | 'create' | 'menu' | 'detail'; initialOrder?: number; onCloseDetail?: () => void; onSessionExpired: () => void };
+
+export function CustomerProductCard({product, busy, quantity, onAdd}: {product: MenuItem; busy: boolean; quantity: number; onAdd: () => void}) {
+  return <article className="product-card catalog-product"><FoodPhoto name={product.nombre} src={product.imagen_url}/>
+    <h3>{product.nombre}</h3><p>{product.descripcion || 'Sin descripción disponible.'}</p><strong>{formatMoney(product.precio)}</strong>
+    {!product.disponible_stock && <span className="product-state product-state--unavailable">No disponible</span>}
+    <button disabled={busy || !product.disponible_stock || quantity >= 100} onClick={onAdd}>Agregar al carrito</button>
+  </article>;
+}
 
 export default function Orders({ restaurant, view = 'list', initialOrder, onCloseDetail, onSessionExpired }: Props) {
   const [refresh, setRefresh] = useState(0);
@@ -32,16 +40,27 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
 
   const catalogPath = `restaurantes/${restaurant}/productos`;
   const catalog = useApiQuery(catalogPath, (signal) => listProducts(restaurant!, signal), onSessionExpired,
-    {enabled:restaurant !== null && view === 'create'});
+    {enabled:restaurant !== null && view === 'create', interval:30_000});
   const places = useApiQuery<Restaurant[]>('restaurantes', (signal) => orderRequest('restaurantes', undefined, signal),
     onSessionExpired, {enabled:restaurant === null && view === 'menu'});
   const menuPath = `restaurantes/${selected}/menu`;
   const customerMenu = useApiQuery<CustomerMenu>(menuPath, (signal) => orderRequest(menuPath, undefined, signal),
-    onSessionExpired, {enabled:!!selected && view === 'menu'});
+    onSessionExpired, {enabled:!!selected && view === 'menu', interval:30_000});
   const products = (catalog.data ?? []).filter((p) => p.activo);
   const restaurants = places.data ?? [];
   const menu = customerMenu.data;
   const queryError = catalog.error?.message ?? places.error?.message ?? customerMenu.error?.message;
+  useEffect(() => {
+    const rows = view === 'menu' ? menu?.productos : view === 'create' ? catalog.data : undefined;
+    if (!rows) return;
+    setQuantities(current => {
+      const unavailable = rows.filter(p => !p.disponible_stock && Number(current[p.id_producto] ?? 0) > 0);
+      if (!unavailable.length) return current;
+      const next = {...current};
+      unavailable.forEach(p => { delete next[p.id_producto]; });
+      return next;
+    });
+  }, [menu, catalog.data, view]);
   async function refreshData() {
     setError(''); setBusy(true);
     try {
@@ -63,6 +82,9 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setNotice('');
+    if ((view === 'menu' ? menu?.productos ?? [] : products).some(p => !p.disponible_stock && Number(quantities[p.id_producto] ?? 0) > 0)) {
+      setError('Quitá del pedido los productos que ya no están disponibles.'); return;
+    }
     const detalles = (view === 'menu' ? menu?.productos ?? [] : products).filter((p) => Number(quantities[p.id_producto] ?? 0) > 0)
       .map((p) => ({ id_producto: p.id_producto, cantidad: Number(quantities[p.id_producto]) }));
     if (!detalles.length) { setError('Indicá la cantidad de al menos un producto.'); return; }
@@ -74,7 +96,13 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
       });
       setDetailTab('detalle'); setDetail(saved); setNotice(`Pedido #${saved.id_pedido} guardado correctamente.`);
       setQuantities({}); setRefresh((value) => value + 1);
-    } catch (failure) { failed(failure); }
+    } catch (failure) {
+      failed(failure);
+      if (failure instanceof OrderError && failure.status === 409) {
+        if (view === 'menu' && selected) void customerMenu.refetch({cancelRefetch:false});
+        if (view === 'create') void catalog.refetch({cancelRefetch:false});
+      }
+    }
     finally { setBusy(false); }
   }
 
@@ -101,7 +129,8 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
         <div className="order-product-grid">{products.length ? products.map((product) => <div className="order-product-choice" key={product.id_producto}>
           <FoodPhoto name={product.nombre} src={product.imagen_url}/>
           <label htmlFor={`qty-${product.id_producto}`}>{product.nombre} · {formatMoney(product.precio)} · cantidad</label>
-          <input id={`qty-${product.id_producto}`} type="number" min="0" max="2147483647" step="1" value={quantities[product.id_producto] ?? ''} onChange={(e) => setQuantities({ ...quantities, [product.id_producto]: e.target.value })} />
+          {!product.disponible_stock && <span className="product-state product-state--unavailable">No disponible</span>}
+          <input id={`qty-${product.id_producto}`} type="number" min="0" max="2147483647" step="1" disabled={!product.disponible_stock} value={quantities[product.id_producto] ?? ''} onChange={(e) => setQuantities({ ...quantities, [product.id_producto]: e.target.value })} />
         </div>) : <p>No hay productos activos cargados. Actualizá el menú después de cargarlos.</p>}</div>
         <p>El total se confirma con los precios vigentes, sin cargos de envío.</p>
         <button className="primary-button" type="submit" disabled={!products.length}>{busy ? 'Guardando…' : 'Confirmar pedido'}</button>
@@ -112,9 +141,8 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
         {restaurants.map((row) => <option key={row.id_restaurante} value={row.id_restaurante}>{displayText(row.nombre)}</option>)}</select>
       {menu && <><p>{menu.restaurante.delivery_disponible ? 'Delivery disponible' : 'Delivery no disponible'}</p>
         <p className="muted">Los platos sin foto propia muestran una imagen ilustrativa.</p>
-        <div className="catalog-grid">{menu.productos.length ? menu.productos.map((p) => <article className="product-card catalog-product" key={p.id_producto}><FoodPhoto name={p.nombre} src={p.imagen_url}/><h3>{p.nombre}</h3><p>{p.descripcion || 'Sin descripción disponible.'}</p><strong>{formatMoney(p.precio)}</strong>
-          <button disabled={busy || Number(quantities[p.id_producto] ?? 0) >= 100} onClick={() => setQuantities({ ...quantities, [p.id_producto]: String(Number(quantities[p.id_producto] ?? 0) + 1) })}>Agregar al carrito</button>
-        </article>) : <p>No hay productos activos.</p>}</div>
+        <div className="catalog-grid">{menu.productos.length ? menu.productos.map((p) => <CustomerProductCard key={p.id_producto} product={p} busy={busy} quantity={Number(quantities[p.id_producto] ?? 0)}
+          onAdd={() => setQuantities({ ...quantities, [p.id_producto]: String(Number(quantities[p.id_producto] ?? 0) + 1) })}/>) : <p>No hay productos activos.</p>}</div>
         <form className="menu-form customer-cart" onSubmit={(event) => void submit(event)}><h3>Tu carrito</h3><fieldset disabled={busy}>
           {menu.productos.filter((p) => Number(quantities[p.id_producto] ?? 0) > 0).map((p) => <div className="cart-row" key={p.id_producto}>
             <label htmlFor={`cart-${p.id_producto}`}>{p.nombre} · {formatMoney(p.precio)}</label><input id={`cart-${p.id_producto}`} type="number" min="0" max="100" step="1" required value={quantities[p.id_producto]} onChange={(e) => setQuantities({ ...quantities, [p.id_producto]: e.target.value })}/>

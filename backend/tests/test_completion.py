@@ -49,6 +49,9 @@ class CompletionTests(unittest.TestCase):
         return self.client.put(path, headers=HEADERS, json=data)
 
     def test_customer_confirmation_identity_distance_persistence_and_server_prices(self):
+        with Session(self.engine) as db:
+            db.add(RecetaDetalle(id_producto=1, id_insumo=1, cantidad=Decimal('0.2'), unidad='kg'))
+            db.commit()
         payload = {key: value for key, value in ORDER.items() if key != "correo_cliente"}
         response = self.post(BASE + "/pedidos", payload)
         self.assertEqual(response.status_code, 201, response.text)
@@ -115,7 +118,7 @@ class CompletionTests(unittest.TestCase):
         self.sign_in(1)
         path = BASE + "/insumos/1/movimientos"
         for change in ({"cantidad": "0"}, {"cantidad": "-1"}, {"cantidad": "NaN"}, {"cantidad": "0.0000001"},
-                       {"cantidad": "1000000000000"}, {"motivo": " "}, {"tipo": "consumo"}, {"id_pedido": 1}):
+                       {"cantidad": "1000000000000"}, {"tipo": "consumo"}, {"id_pedido": 1}):
             result = self.post(path, {"tipo": "reposicion", "cantidad": "1", "motivo": "Compra", **change})
             self.assertEqual(result.status_code, 422, result.text)
         with Session(self.engine) as db:

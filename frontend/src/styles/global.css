@@ -1877,9 +1877,13 @@ strong {
 }
 /* Centro operativo de Pedidos: tarjetas compactas, historial sin cambios. */
 .daily-orders-board { max-width:1180px; margin:0 auto; color:#283e31 }
-.daily-orders-caption { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:15px 0 22px; font-size:14px; color:#587060 }
+.daily-orders-caption { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin:15px 0 22px; font-size:14px; color:#587060 }
 .daily-orders-caption p { margin:0; font-weight:600 }
-.daily-orders-caption > span { font-size:12px }
+.daily-orders-caption > div > span { font-size:12px }
+.courier-availability { display:flex; flex-direction:column; gap:5px; font-size:12px; text-align:left }
+.courier-available { color:#137547 }
+.courier-unavailable { color:#b42318 }
+.product-state--unavailable { color:#b42318; background:#fff0ed }
 .daily-orders-board section { margin:0 0 27px }
 .daily-orders-board h3 { display:flex; gap:10px; align-items:center; font-size:19px; margin:0 0 14px }
 .daily-orders-board h3 > span { display:inline-flex; align-items:center; justify-content:center; min-width:25px; min-height:25px; padding:2px 7px; border-radius:8px; font-size:12px; color:#52745d; background:#e9f1eb }
@@ -1893,6 +1897,8 @@ strong {
 .daily-order-rank strong { font-size:25px; line-height:1.2 }
 .daily-order-time { margin:9px 0 13px; font-size:12px; color:#6b7f71 }
 .daily-order-products { margin:0 0 13px; font-size:15px; font-weight:550; line-height:1.6; overflow-wrap:anywhere }
+.daily-order-address { margin:0 0 12px; font-size:13px; color:#40584a; overflow-wrap:anywhere }
+.daily-order-address small { display:block; margin-top:3px; color:#77877c; font-size:12px }
 .daily-order-info { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:9px; margin-bottom:13px }
 .daily-order-info > strong { font-size:20px; color:#35644a; font-variant-numeric:tabular-nums }
 .daily-order-info > span { font-size:12px; color:#617867 }

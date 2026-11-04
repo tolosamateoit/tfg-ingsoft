@@ -1,7 +1,7 @@
 import { cacheScope, confirmMutation } from './queryCache';
 import { sessionHeaders } from './session';
 export type Restaurant = { id_restaurante: number; nombre: string; abierto: boolean; delivery_disponible: boolean };
-export type MenuItem = { id_producto: number; nombre: string; precio: string; descripcion?: string | null; imagen_url?: string | null };
+export type MenuItem = { id_producto: number; nombre: string; precio: string; disponible_stock: boolean; descripcion?: string | null; imagen_url?: string | null };
 export type CustomerMenu = { restaurante: Restaurant; productos: MenuItem[] };
 export type OrderSummary = {
   id_pedido: number; id_restaurante: number; restaurante: string; cliente: string;
@@ -44,7 +44,7 @@ export type OrderPage = { pedidos: OrderSummary[]; total: number; limit: number;
   fecha_operativa: string | null; periodo: 'dia' | 'historial' };
 
 export type OperatingOrder = OrderSummary & {
-  version: number; distancia_km: string | null; prioridad: import('./logistics').Priority | null;
+  version: number; distancia_km: string | null; direccion_entrega: string; referencia_local: string | null; prioridad: import('./logistics').Priority | null;
 };
 export type OperatingDay = {
   fecha_operativa: string | null; actualizada_en: string;

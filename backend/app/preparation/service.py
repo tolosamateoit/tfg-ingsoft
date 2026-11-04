@@ -3,7 +3,7 @@
 from decimal import Decimal, localcontext
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -45,19 +45,27 @@ def preparation_history(db, order_id):
 def _preparation_output(db, restaurant_id, order, history=None):
     order_id = order.id_pedido
     history = preparation_history(db, order_id) if history is None else history
-    movements = db.execute(select(MovimientoStock.id_movimiento, MovimientoStock.id_insumo, Insumo.nombre,
-                                  Insumo.unidad, MovimientoStock.cantidad, MovimientoStock.fecha_hora, MovimientoStock.motivo)
-                           .join(Insumo, Insumo.id_insumo == MovimientoStock.id_insumo)
-                           .where(MovimientoStock.id_pedido == order_id, Insumo.id_restaurante == restaurant_id,
-                                  MovimientoStock.tipo == "consumo")
-                           .order_by(MovimientoStock.id_movimiento)).mappings()
+    ingredient_ids = select(MovimientoStock.id_insumo).where(
+        MovimientoStock.id_pedido == order_id, MovimientoStock.tipo == 'consumo')
+    later = func.coalesce(func.sum(MovimientoStock.cantidad).over(
+        partition_by=MovimientoStock.id_insumo, order_by=MovimientoStock.id_movimiento.desc(),
+        rows=(None, -1)), 0)
+    ledger = (select(MovimientoStock.id_movimiento, MovimientoStock.id_insumo, Insumo.nombre,
+                     Insumo.unidad, MovimientoStock.cantidad, MovimientoStock.fecha_hora, MovimientoStock.motivo,
+                     MovimientoStock.id_pedido, MovimientoStock.tipo,
+                     (Insumo.stock_actual - later).label('stock_despues'),
+                     (Insumo.stock_actual - later - MovimientoStock.cantidad).label('stock_antes'))
+              .join(Insumo, Insumo.id_insumo == MovimientoStock.id_insumo)
+              .where(Insumo.id_restaurante == restaurant_id, MovimientoStock.id_insumo.in_(ingredient_ids)).subquery())
+    movements = db.execute(select(ledger).where(ledger.c.id_pedido == order_id, ledger.c.tipo == 'consumo')
+                           .order_by(ledger.c.id_movimiento)).mappings()
     return PreparationOutput(id_pedido=order_id, estado=order.estado,
                              version=history[-1]["id_historial"] if history else 0,
                              historial=[PreparationEvent(**row) for row in history],
                              movimientos=[ConsumptionOutput(**row) for row in movements])
 
 
-def consumption(db: Session, restaurant_id: int, order_id: int):
+def consumption(db: Session, restaurant_id: int, order_id: int, *, exclude_order_id=None):
     details = db.execute(select(DetallePedido.id_producto, DetallePedido.cantidad)
                          .where(DetallePedido.id_pedido == order_id)).all()
     recipes = db.scalars(select(RecetaDetalle).where(RecetaDetalle.id_producto.in_([row.id_producto for row in details]))).all()
@@ -77,8 +85,12 @@ def consumption(db: Session, restaurant_id: int, order_id: int):
         by_id = {ingredient.id_insumo: ingredient for ingredient in ingredients}
         if len(by_id) != len(amounts) or any(recipe.unidad != by_id[recipe.id_insumo].unidad for recipe in recipes):
             raise HTTPException(409, "Revisá la pertenencia y las unidades de los insumos de las recetas.")
+        from app.menu.availability import reserved_ingredients
+        reserved = reserved_ingredients(restaurant_id, exclude_order_id=exclude_order_id)
+        held = dict(db.execute(select(reserved.c.id_insumo, reserved.c.reservado)
+                               .where(reserved.c.id_insumo.in_(amounts))).all())
         for ingredient in ingredients:
-            if ingredient.stock_actual < amounts[ingredient.id_insumo]:
+            if ingredient.stock_actual - held.get(ingredient.id_insumo, 0) < amounts[ingredient.id_insumo]:
                 raise HTTPException(409, 'No hay stock suficiente para preparar el pedido.')
             if amounts[ingredient.id_insumo] > LIMIT or abs(ingredient.stock_actual - amounts[ingredient.id_insumo]) > LIMIT:
                 raise HTTPException(422, "El consumo supera el rango de cantidades permitido.")
@@ -103,7 +115,8 @@ def change_preparation(db: Session, user: Usuario, restaurant_id: int, order_id:
                  or order.estado == "En preparación" and data.estado == "Listo")
     if not valid:
         raise HTTPException(409, "Transición no permitida. Para repetir el consumo usá Nueva preparación explícita.")
-    ingredients, amounts = consumption(db, restaurant_id, order_id) if data.estado == "En preparación" else ([], {})
+    ingredients, amounts = consumption(db, restaurant_id, order_id,
+        exclude_order_id=order_id if order.estado == 'Nuevo' else None) if data.estado == "En preparación" else ([], {})
     try:
         order.estado = data.estado
         event = HistorialPedido(id_pedido=order_id, id_usuario=user.id_usuario, estado=data.estado,

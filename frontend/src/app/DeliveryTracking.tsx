@@ -35,14 +35,14 @@ export default function DeliveryTracking({ order, manage = false, onUpdated, onS
     <button onClick={() => { setError(''); void load().catch(failed); }}>Actualizar seguimiento</button>
     {(error || queryError) && <p role="alert" className="auth-error">{error || queryError}</p>}
     {data && <><p><Status value={data.estado_pedido}/></p>
-      {data.entrega ? <><p>Entrega #{data.entrega.id_entrega}: {data.entrega.estado}<WarningBadge message={data.entrega.advertencia_entrega}/></p>
-        <p>Repartidor: {data.entrega.repartidor} · Asignada: {formatDateTime(data.entrega.fecha_asignacion)}</p></> : <p>Entrega todavía sin asignar.</p>}
+      {data.entrega ? <><p>Estado de entrega: {data.entrega.estado}<WarningBadge message={data.entrega.advertencia_entrega}/></p>
+        <p>Repartidor asignado: {displayText(data.entrega.repartidor)}</p></> : <p>Entrega todavía sin asignar.</p>}
       {manage && data.entrega && <div className="menu-actions">
         {data.entrega.estado === 'Asignado' && <button disabled={busy} onClick={() => void change('En camino')}>Iniciar entrega</button>}
         {data.entrega.estado === 'En camino' && <><button disabled={busy} onClick={() => void change('Entregado')}>Marcar entregada</button>
           <button disabled={busy} onClick={() => void change('No entregado')}>Marcar no entregada</button></>}
       </div>}
-      <h4>Historial</h4><ul className="timeline">{data.historial.map((event) => <li key={event.id_historial}>{formatDateTime(event.fecha_hora)} · {displayText(event.usuario)} · {event.estado} · {displayText(event.detalle)}</li>)}</ul>
+      <h4>Historial</h4><ul className="timeline">{data.historial.map((event) => <li key={event.id_historial}>{formatDateTime(event.fecha_hora)} · {displayText(event.usuario)} · {event.estado}</li>)}</ul>
     </>}
   </section>;
 }

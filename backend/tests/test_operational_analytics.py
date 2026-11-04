@@ -147,6 +147,9 @@ class OperationalTests(unittest.TestCase):
             self.assertEqual(flagged['estado'], 'Entregado')
         detail = self.client.get(f'/api/pedidos/{ids[-1]}').json()
         self.assertEqual(detail['advertencia_importe'], alerts[0]['mensaje'])
+        with Session(self.engine) as db:
+            db.get(Insumo, 1).stock_actual = Decimal(30)
+            db.commit()
         with patch('app.orders.service.lock_order_relations') if self.engine.dialect.name == 'sqlite' else nullcontext():
             created = self.client.post('/api/restaurantes/1/pedidos', headers=HEADERS, json={
                 'correo_cliente': 'u3@test.invalid', 'direccion_entrega': 'Fixture', 'medio_pago': 'efectivo', 'distancia_km': '2',

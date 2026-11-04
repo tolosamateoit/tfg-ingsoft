@@ -17,7 +17,7 @@ export function startQuerySession(user: {id_usuario:number; id_restaurante:numbe
 }
 export const apiKey = (path: string) => [scope, 'api', path] as const;
 export function freshness(path: string) {
-  if (/\/(productos|insumos|stock|movimientos-stock|tarifas)(\/|\?|$)/.test(path)) return Infinity;
+  if (/\/(insumos|stock|movimientos-stock|tarifas)(\/|\?|$)/.test(path)) return Infinity;
   if (path.includes('/predicciones/')) return 5 * 60_000;
   if (/\/(indicadores|alertas)(\?|$)/.test(path)) return 0;
   return 30_000;
@@ -41,7 +41,8 @@ export function affectedByMutation(changed: string, cached: string) {
   const catalog = /\/(productos|insumos)(\/|$)/.test(changed);
   if (catalog) return /^(pedidos|entregas)(\/|\?|$)/.test(cached) || /\/(productos|insumos|stock|movimientos-stock|menu|predicciones|indicadores|alertas|pedidos|prioridades)(\/|\?|$)/.test(cached);
   if (/(^|\/)(pedidos|entregas)(\/|$)/.test(changed))
-    return /^(pedidos|entregas|repartidores)(\/|\?|$)/.test(cached) || /\/(pedidos|prioridades|repartidores|stock|insumos|movimientos-stock|predicciones|indicadores|alertas)(\/|\?|$)/.test(cached);
+    return /^(pedidos|entregas|repartidores)(\/|\?|$)/.test(cached) || /\/(pedidos|prioridades|repartidores|stock|insumos|movimientos-stock|predicciones|indicadores|alertas)(\/|\?|$)/.test(cached)
+      || /(^|\/)pedidos(\/|$)/.test(changed) && /\/(productos|menu)(\/|\?|$)/.test(cached);
   if (/\/(repartidores|tarifas)(\/|$)/.test(changed) || changed.startsWith('repartidores/'))
     return /^(pedidos|entregas|repartidores)(\/|\?|$)/.test(cached) || /\/(repartidores|pedidos|tarifas|indicadores|alertas)(\/|\?|$)/.test(cached);
   return cached === changed;
