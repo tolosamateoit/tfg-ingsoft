@@ -117,7 +117,11 @@ class OrderReadTests(unittest.TestCase):
             self.assertEqual(self.client.get(f"/api/pedidos?{query}").status_code, 422)
 
     def test_roles_and_anonymous_access(self):
-        for user in (5, 8):
+        self.sign_in(5)
+        self.assertEqual(self.client.get('/api/pedidos/1').status_code, 200)
+        self.assertEqual(self.client.get('/api/pedidos/2').status_code, 404)
+        self.assertEqual(self.client.get('/api/restaurantes').status_code, 403)
+        for user in (8,):
             self.sign_in(user)
             for path in ("/api/pedidos", "/api/pedidos/1", "/api/restaurantes", "/api/restaurantes/1/menu"):
                 self.assertEqual(self.client.get(path).status_code, 403)

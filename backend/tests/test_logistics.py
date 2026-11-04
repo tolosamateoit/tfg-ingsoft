@@ -245,7 +245,7 @@ class AssignmentTests(unittest.TestCase):
             db.commit()
         response = self.assign()
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual([row["id_pedido"] for row in response.json()["entregas"]], [1, important_id])
+        self.assertEqual([row["id_pedido"] for row in response.json()["entregas"]], [important_id, 1])
         self.assertEqual([row["id_repartidor"] for row in response.json()["entregas"]], [1, 3])
         self.assertEqual(response.json()["pendientes"], 0)
         self.assertEqual(self.assign().json(), {"entregas": [], "pendientes": 0})

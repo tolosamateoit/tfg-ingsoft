@@ -5,6 +5,7 @@ export type User = {
   correo: string;
   rol: string;
   id_restaurante: number | null;
+  restaurante?: string | null;
 };
 
 export class AuthError extends Error {

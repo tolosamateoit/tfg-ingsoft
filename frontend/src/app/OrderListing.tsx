@@ -30,8 +30,9 @@ export function OrderTable({page,restaurant,deliveries=false,onOpen}: Pick<Props
 export default function OrderListing({ restaurant, refresh, deliveries = false, onOpen, onSessionExpired }: Props) {
   const [period, setPeriod] = useState<'dia' | 'historial'>(restaurant === null ? 'historial' : 'dia');
   const [offset, setOffset] = useState(0);
+  const [date, setDate] = useState('');
   const operational = restaurant !== null && !deliveries && period === 'dia';
-  const path = `pedidos?periodo=${period}&limit=20&offset=${offset}`;
+  const path = `pedidos?periodo=${period}&limit=20&offset=${offset}${date && period === 'historial' ? `&fecha=${date}` : ''}`;
   const query = useApiQuery<OrderPage>(path, (signal) => orderRequest(path, undefined, signal), onSessionExpired,
     {enabled:!operational});
   const page = query.data;
@@ -44,13 +45,14 @@ export default function OrderListing({ restaurant, refresh, deliveries = false, 
     </div>}
     {operational ? <DailyOrders restaurant={restaurant} refresh={refresh} onOpen={onOpen} onSessionExpired={onSessionExpired}/> : <>
     <h3>{period === 'dia' ? 'Pedidos del día' : 'Historial de pedidos'}</h3>
+    {period === 'historial' && <label>Fecha de pedido <input type="date" value={date} onChange={event => { setDate(event.target.value); setOffset(0); }}/></label>}
     {error && <p role="alert" className="auth-error">{error}</p>}
     {loading && <p role="status">Cargando pedidos…</p>}
     {!loading && page && <>
       {restaurant !== null && <p>Fecha operativa: {page.fecha_operativa ? formatCalendarDate(page.fecha_operativa) : 'Sin pedidos registrados'}.</p>}
       <p>{page.total} pedido(s){period === 'dia' ? ' en la fecha operativa' : ' en el historial'}.</p>
       {deliveries && <p>Se muestran los mismos pedidos que en Pedidos para este período, con su entrega asociada o sin asignar.</p>}
-      {!page.pedidos.length ? <p>No hay pedidos para este período.</p> : <OrderTable page={page} restaurant={restaurant} deliveries={deliveries} onOpen={onOpen}/>}
+      {!page.pedidos.length ? <p>{date ? 'Sin pedidos en el día seleccionado' : 'No hay pedidos para este período.'}</p> : <OrderTable page={page} restaurant={restaurant} deliveries={deliveries} onOpen={onOpen}/>}
       <div className="menu-actions" aria-label="Paginación de pedidos">
         <button disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - page.limit))}>Página anterior</button>
         <span>Página {page.total ? Math.floor(page.offset / page.limit) + 1 : 0} de {Math.ceil(page.total / page.limit)}</span>

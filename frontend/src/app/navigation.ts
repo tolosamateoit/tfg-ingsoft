@@ -4,7 +4,6 @@ const operations: Page[] = [
   { path: 'pedidos', label: 'Pedidos', icon: 'orders', group: 'Operación', description: 'Del primer ingrediente a la última entrega.' },
   { path: 'catalogo', label: 'Menú y recetas', icon: 'food', group: 'Operación', description: 'La carta de tu restaurante, siempre al día.' },
   { path: 'stock', label: 'Insumos y stock', icon: 'food', group: 'Operación', description: 'Existencias y movimientos de los insumos de tu cocina.' },
-  { path: 'entregas', label: 'Entregas', icon: 'truck', group: 'Operación', description: 'Asigná, acompañá y consultá cada recorrido.' },
   { path: 'repartidores', label: 'Repartidores', icon: 'people', group: 'Operación', description: 'Tu equipo de reparto y su disponibilidad.' },
 ];
 export const newOrder: Page = { path: 'nuevo-pedido', label: 'Nuevo pedido', icon: 'plus', group: 'Operación', description: 'Registrá los productos y los datos de entrega.' };
@@ -15,7 +14,7 @@ export function pagesFor(user: User): Page[] {
     { path: 'indicadores', label: 'Indicadores y alertas', icon: 'chart', group: 'Análisis', description: 'Datos que te ayudan a tomar mejores decisiones.' },
   ] : operations;
   if (user.rol === 'repartidor') return [
-    { path: 'entregas', label: 'Mis entregas', icon: 'truck', group: 'Mi trabajo', description: 'Tus pedidos asignados y el seguimiento de cada entrega.' },
+    { path: 'pedidos-reparto', label: 'Mis pedidos', icon: 'orders', group: 'Mi trabajo', description: 'Pedidos asignados y su historial.' },
     { path: 'disponibilidad', label: 'Mi disponibilidad', icon: 'clock', group: 'Mi trabajo', description: 'Mantené al equipo informado de tu disponibilidad.' },
   ];
   if (user.rol === 'cliente') return [

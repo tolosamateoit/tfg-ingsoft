@@ -96,7 +96,7 @@ class CompletionTests(unittest.TestCase):
         id = response.json()["id_insumo"]
         self.assertEqual(Decimal(response.json()["stock_actual"]), 0)
         path = f"{BASE}/insumos/{id}/movimientos"
-        for kind, quantity, expected in (("reposicion", "4.123456", "4.123456"), ("ajuste", "-5", "-0.876544")):
+        for kind, quantity, expected in (("reposicion", "4.123456", "4.123456"), ("ajuste", "-4", "0.123456")):
             result = self.post(path, {"tipo": kind, "cantidad": quantity, "motivo": "Recuento de cocina"})
             self.assertEqual(result.status_code, 201, result.text)
             self.assertEqual(Decimal(result.json()["stock_actual"]), Decimal(expected))

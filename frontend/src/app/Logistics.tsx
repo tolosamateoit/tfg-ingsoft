@@ -25,7 +25,7 @@ export default function Logistics({ restaurant, courier, view = 'deliveries', on
     if (failure instanceof OrderError && failure.status === 401) onSessionExpired();
     else setError(failure instanceof Error ? failure.message : 'No se pudo completar la operación.');
   }
-  const path = `entregas?offset=${offset}`;
+  const path = `entregas?activos=true&offset=${offset}`;
   const deliveryQuery = useApiQuery<Delivery[]>(path, (signal) => operationRequest(path, undefined, signal), onSessionExpired,
     {enabled:courier && view === 'deliveries'});
   const summary = useApiQuery<{fecha:string; entregas_completadas:number; importe_estimado:string}>(
@@ -59,7 +59,7 @@ export default function Logistics({ restaurant, courier, view = 'deliveries', on
 
   return <section id="gestion-entregas" className="menu-manager" aria-label="Prioridad y entregas">
     {!courier && view === 'priorities' && <PriorityBoard key={restaurant} restaurant={restaurant} onSessionExpired={onSessionExpired}/>}
-    {view === 'deliveries' && <><h2>{courier ? 'Tus entregas' : 'Seguimiento de entregas'}</h2>
+    {view === 'deliveries' && <><h2>{courier ? 'Pedidos en reparto' : 'Seguimiento de pedidos'}</h2>
     {courier && daily && <section className="economy-summary"><h3>Entregas completadas hoy · {formatCalendarDate(daily.fecha)}</h3><p className="order-total">{daily.entregas_completadas} entregas · {formatMoney(daily.importe_estimado)}</p><p>Estimación operativa con las tarifas del restaurante guardadas al asignar cada entrega. Día de Buenos Aires; no es una liquidación de sueldo.</p></section>}
     {!courier && <><p>Se asignan repartidores disponibles a los pedidos que llevan más tiempo listos.</p>
       <button disabled={busy} onClick={() => void run(assign)}>Asignar pedidos listos</button></>}
@@ -84,6 +84,7 @@ export default function Logistics({ restaurant, courier, view = 'deliveries', on
     <div className="menu-actions"><button disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 20))}>Entregas anteriores</button>
       <button disabled={busy || rows.length < 20} onClick={() => setOffset(offset + 20)}>Más entregas</button></div>
     </>}
+    {courier && <OrderListing restaurant={null} refresh={refresh} onOpen={setSelected} onSessionExpired={onSessionExpired}/>}
     {selected !== null && <><button onClick={() => setSelected(null)}>Cerrar seguimiento #{selected}</button>
       <DeliveryTracking key={selected + ':' + refresh + ':' + rows.find((row) => row.id_pedido === selected)?.estado} order={selected} manage={!courier} onUpdated={() => setRefresh((n) => n + 1)} onSessionExpired={onSessionExpired} /></>}
     </>}

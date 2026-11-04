@@ -1,6 +1,7 @@
 """HU-03: oferta del restaurante y pedidos propios/del restaurante autorizado."""
 
 from typing import Annotated, Literal
+from datetime import date
 
 from fastapi import APIRouter, Depends, Path, Query
 
@@ -43,8 +44,8 @@ def menu(id_restaurante: PositiveId, db: DB, user: Customer):
 def orders(db: DB, user: CurrentUser,
            limit: Annotated[int, Query(ge=1, le=100)] = 20,
            offset: Annotated[int, Query(ge=0)] = 0,
-           periodo: Literal["dia", "historial"] = "historial"):
-    return list_orders(db, user, limit, offset, periodo)
+           periodo: Literal["dia", "historial"] = "historial", fecha: date | None = None):
+    return list_orders(db, user, limit, offset, periodo, fecha)
 
 
 @router.get("/pedidos/{id_pedido}", response_model=OrderOutput)

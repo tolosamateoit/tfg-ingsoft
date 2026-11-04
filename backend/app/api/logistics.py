@@ -49,8 +49,8 @@ def follow_order(id_pedido: PositiveId, db: DB, user: CurrentUser):
 
 
 @router.get("/entregas", response_model=list[DeliveryOutput])
-def list_deliveries(db: DB, user: DeliveryReader, offset: Annotated[int, Query(ge=0)] = 0):
-    return deliveries(db, user, offset)
+def list_deliveries(db: DB, user: DeliveryReader, offset: Annotated[int, Query(ge=0)] = 0, activos: bool = False):
+    return deliveries(db, user, offset, active_only=activos)
 
 
 @router.put("/entregas/{id_entrega}/estado", response_model=TrackingOutput)

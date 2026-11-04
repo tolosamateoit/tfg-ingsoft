@@ -67,11 +67,12 @@ type ViewProps = { data: OperatingDay; busy: boolean; onOpen: (id:number) => voi
 
 export function DailyOrdersView({data, busy, pending = {}, onPage, ...actions}: ViewProps) {
   const cards = (rows: OperatingOrder[]) => <div className="daily-orders-grid">{rows.map((row) => <DailyOrderCard key={row.id_pedido}
-    row={row} couriers={data.repartidores} busy={busy || Boolean(pending[row.id_pedido])}
+    row={row} couriers={data.repartidores.filter(c => c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa)} busy={busy || Boolean(pending[row.id_pedido])}
     confirmedState={pending[row.id_pedido]?.state} {...actions}/>)}</div>;
   return <div className="daily-orders-board" aria-busy={busy}>
     <div className="daily-orders-caption"><p>{data.fecha_operativa ? `Día operativo: ${formatCalendarDate(data.fecha_operativa)}` : 'Sin pedidos registrados'}</p>
       <span>Actualización automática cada 30 segundos</span></div>
+    <div className="courier-availability" aria-label="Disponibilidad de repartidores">{data.repartidores.map(c => <span key={c.id_repartidor} style={{color:c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa ? '#137547' : '#b42318'}}>● {c.nombre} · {c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa ? 'Disponible' : 'No disponible'} </span>)}</div>
     <section aria-labelledby="orders-active-title"><h3 id="orders-active-title">Para atender primero <span>{data.activos.length}</span></h3>
       {data.activos.length ? cards(data.activos) : <p className="daily-orders-empty">¡Todo al día! No hay pedidos por preparar.</p>}</section>
     {data.listos.length > 0 && <section aria-labelledby="orders-ready-title"><h3 id="orders-ready-title">Listos para entregar <span>{data.listos.length}</span></h3>{cards(data.listos)}</section>}
@@ -86,7 +87,7 @@ export function DailyOrdersView({data, busy, pending = {}, onPage, ...actions}: 
 }
 
 type Props = { restaurant:number; refresh:number; onOpen:(id:number)=>void; onSessionExpired:()=>void };
-export default function DailyOrders({restaurant, onOpen, onSessionExpired}: Props) {
+export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpired}: Props) {
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -101,6 +102,7 @@ export default function DailyOrders({restaurant, onOpen, onSessionExpired}: Prop
   const query = useApiQuery<OperatingDay>(path,
     (signal) => operationRequest(path, undefined, signal, 'GET', 30000), onSessionExpired, {interval:30_000});
   const data = query.data;
+  useEffect(() => { if (refresh) void query.refetch({cancelRefetch:false}); }, [refresh]);
   async function load() { await query.refetch({cancelRefetch:false, throwOnError:true}); }
   useEffect(() => {
     if (data && offset > 0 && offset >= data.total_finalizados) setOffset(0);
@@ -139,6 +141,8 @@ export default function DailyOrders({restaurant, onOpen, onSessionExpired}: Prop
   return <>
     {error && <p role="alert" className="auth-error">{error} <button disabled={busy} onClick={() => void load().then(() => setError('')).catch(failed)}>Actualizar</button></p>}
     {busy && <p role="status" className="daily-orders-saving">Guardando y actualizando pedidos…</p>}
+    <button disabled={busy || !data?.listos.length} onClick={() => { setBusy(true); setError(''); void operationRequest(`restaurantes/${restaurant}/entregas/asignar`, undefined, undefined, 'POST').then(load).catch(failed).finally(() => setBusy(false)); }}>Asignar automáticamente</button>
+    <p className="muted">Primero los pedidos de mayor prioridad y los repartidores disponibles con más entregas exitosas. Sin antecedentes se considera 0%; los empates se resuelven por nombre.</p>
     {data ? <DailyOrdersView data={data} busy={busy} pending={pending} onOpen={onOpen} onState={state} onReject={setRejecting}
       onAssign={assign} onDelivery={delivery} onDistance={distance} onPage={setOffset}/> : !error && <p role="status">Cargando los pedidos del día…</p>}
     {rejecting && <Dialog title={`¿Rechazar pedido #${rejecting.id_pedido}?`} busy={busy} onClose={() => setRejecting(null)}>

@@ -33,10 +33,13 @@ class UserOutput(BaseModel):
     correo: str
     rol: str
     id_restaurante: int | None
+    restaurante: str | None = None
 
 
 def public_user(user) -> UserOutput:
-    return UserOutput(**{name: getattr(user, name) for name in UserOutput.model_fields})
+    values = {name: getattr(user, name) for name in UserOutput.model_fields if name != 'restaurante'}
+    restaurant = getattr(user, 'restaurante', None)
+    return UserOutput(**values, restaurante=restaurant.nombre if restaurant else None)
 
 
 @router.post("/login", response_model=UserOutput, dependencies=[Depends(protect_mutation)])

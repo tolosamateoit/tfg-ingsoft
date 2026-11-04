@@ -49,7 +49,7 @@ export function affectedByMutation(changed: string, cached: string) {
 export async function invalidateMutation(path: string, requestScope: string) {
   if (requestScope !== scope) return;
   await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === requestScope
-    && query.queryKey[1] === 'api' && affectedByMutation(path, String(query.queryKey[2])) });
+    && query.queryKey[1] === 'api' && affectedByMutation(path, String(query.queryKey[2])) }, {cancelRefetch:false, throwOnError:true});
 }
 
 // Se llama únicamente después de recibir una respuesta exitosa del servidor.

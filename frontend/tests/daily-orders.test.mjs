@@ -59,8 +59,8 @@ test('el dia muestra tarjetas agrupadas y prioridades consecutivas del backend',
   const html=renderToStaticMarkup(React.createElement(DailyOrdersView,{data:data.day,busy:false,...actions}));
   assert.match(html,/31\/10\/2026/);
   assert.doesNotMatch(html,/<table/);
-  assert.equal((html.match(/¿Por qué esta prioridad\?/g)||[]).length,data.day.activos.length);
-  assert.equal((html.match(/class="daily-order-rank"/g)||[]).length,data.day.activos.length);
+  assert.equal((html.match(/¿Por qué esta prioridad\?/g)||[]).length,data.day.activos.length + data.day.listos.length);
+  assert.equal((html.match(/class="daily-order-rank"/g)||[]).length,data.day.activos.length + data.day.listos.length);
   assert.match(html,/Listos para entregar/);
   assert.match(html,/En reparto/);
   assert.match(html,/Finalizados y rechazados/);
@@ -77,7 +77,7 @@ test('cada estado muestra solo sus acciones validas y no inventa distancia pendi
   assert.match(card(preparing),/Marcar como listo/); assert.doesNotMatch(card(preparing),/Confirmar pedido|Rechazar/);
   assert.match(card(data.day.listos[0]),/Enviar a entrega/);
   assert.match(card(data.day.listos[0]),/Elegí un repartidor/);
-  assert.doesNotMatch(card(data.day.listos[0]),/¿Por qué esta prioridad/);
+  assert.match(card(data.day.listos[0]),/¿Por qué esta prioridad/);
   assert.match(card(data.day.en_entrega[0]),/Iniciar entrega/);
   assert.doesNotMatch(card(data.day.finalizados[0]),/Confirmar pedido|Rechazar|Enviar a entrega|Prioridad/);
   assert.match(card(fresh,true),/disabled=""/);

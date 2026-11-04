@@ -104,12 +104,12 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(db.get(Insumo, 1).stock_actual, Decimal("19.3"))
             self.assertEqual(db.get(Insumo, 2).stock_actual, Decimal("49.8"))
 
-    def test_stock_can_be_negative_but_missing_recipe_cannot_silently_skip_consumption(self):
+    def test_negative_stock_and_missing_recipe_are_rejected(self):
         with Session(self.engine) as db:
             db.get(Insumo, 1).stock_actual = Decimal(0)
             db.commit()
-        self.assertEqual(self.change().status_code, 200)
-        self.assertTrue(any(Decimal(row["stock_actual"]) < 0 for row in self.client.get(BASE + "/stock").json()))
+        self.assertEqual(self.change().status_code, 409)
+        self.assertFalse(any(Decimal(row["stock_actual"]) < 0 for row in self.client.get(BASE + "/stock").json()))
         self.sign_in(2)
         response = self.client.put("/api/restaurantes/2/pedidos/2/preparacion", headers=HEADERS,
                                    json={"estado": "En preparación", "version": 0})

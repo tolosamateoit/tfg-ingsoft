@@ -73,18 +73,18 @@ export default function Couriers({ restaurant, owner = false, onSessionExpired }
       </Dialog>}
     </>}
     {!page ? <p>Cargando repartidores…</p> : <>
-      <p>Restaurante {page.id_restaurante}: {page.abierto ? 'abierto' : 'cerrado'} · {page.delivery_disponible ? 'Delivery disponible' : 'Delivery no disponible'}</p>
+      <p>{page.abierto ? 'abierto' : 'cerrado'} · {page.delivery_disponible ? 'Delivery disponible' : 'Delivery no disponible'}</p>
       {!page.repartidores.length && <p>Todavía no hay repartidores asociados a esta cuenta.</p>}
       <div className="catalog-grid">{page.repartidores.map((row) => <article className="product-card menu-form" key={row.id_repartidor}>
         <h3>{displayText(row.nombre)}</h3><p>{row.activo ? 'Cuenta activa' : 'Cuenta inactiva'}{row.zona ? ` · Zona: ${row.zona}` : ''}</p>
         <p><Status value={row.estado_disponibilidad}/></p><p>Último cambio: {row.ultimo_cambio ? formatDateTime(row.ultimo_cambio) : 'Sin cambios registrados'}</p>
-        <label htmlFor={`courier-${row.id_repartidor}`}>Disponibilidad de {displayText(row.nombre)}</label>
+        {restaurant === null && <><label htmlFor={`courier-${row.id_repartidor}`}>Disponibilidad de {displayText(row.nombre)}</label>
         <select id={`courier-${row.id_repartidor}`} disabled={busy || !row.activo} value={selected[row.id_repartidor] ?? row.estado_disponibilidad}
           onChange={(event) => setSelected({ ...selected, [row.id_repartidor]: event.target.value })}>
           {!['Disponible', 'Ocupado', 'No disponible'].includes(row.estado_disponibilidad) && <option value={row.estado_disponibilidad}>{row.estado_disponibilidad}</option>}
           <option>Disponible</option><option>Ocupado</option><option>No disponible</option>
         </select>
-        <button disabled={busy || !row.activo || selected[row.id_repartidor] === row.estado_disponibilidad} onClick={() => void save(row.id_repartidor)}>Guardar disponibilidad de {displayText(row.nombre)}</button>
+        <button disabled={busy || !row.activo || selected[row.id_repartidor] === row.estado_disponibilidad} onClick={() => void save(row.id_repartidor)}>Guardar disponibilidad de {displayText(row.nombre)}</button></>}
       </article>)}</div>
     </>}
   </section>;

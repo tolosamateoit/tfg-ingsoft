@@ -53,8 +53,9 @@ class CourierTests(unittest.TestCase):
         rows = self.client.get(BASE).json()["repartidores"]
         self.assertEqual({row["id_repartidor"] for row in rows}, {1, 3})
         self.assertTrue(all(row["ultimo_cambio"] is None for row in rows))
+        self.sign_in(5)
         for _ in range(2):
-            response = self.update()
+            response = self.client.put('/api/repartidores/me', headers=HEADERS, json={'estado_disponibilidad':'No disponible'})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertTrue(response.json()["ultimo_cambio"])
         with Session(self.engine) as db:
@@ -62,8 +63,10 @@ class CourierTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 1)
 
     def test_availability_changes_immediately_control_hu03_confirmation(self):
-        for id in (1, 3):
-            self.assertEqual(self.update(id).status_code, 200)
+        for uid in (5, 9):
+            self.sign_in(uid)
+            self.assertEqual(self.client.put('/api/repartidores/me', headers=HEADERS, json={'estado_disponibilidad':'No disponible'}).status_code, 200)
+        self.sign_in(1)
         self.assertFalse(self.client.get(BASE).json()["delivery_disponible"])
         response = self.client.post("/api/restaurantes/1/pedidos", headers=HEADERS, json=ORDER)
         self.assertEqual(response.status_code, 409, response.text)
@@ -82,7 +85,7 @@ class CourierTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
 
     def test_roles_scope_csrf_and_no_account_or_restaurant_edits(self):
-        self.assertEqual(self.update(2).status_code, 404)
+        self.assertEqual(self.update(2).status_code, 403)
         self.assertEqual(self.client.get("/api/restaurantes/2/repartidores").status_code, 403)
         self.assertEqual(self.client.put(BASE + "/1", json={"estado_disponibilidad": "Ocupado"}).status_code, 403)
         self.assertEqual(self.client.get("/api/repartidores/me").status_code, 403)
@@ -97,7 +100,7 @@ class CourierTests(unittest.TestCase):
         self.assertEqual(self.client.put("/api/repartidores/me", headers=HEADERS,
                                        json={"estado_disponibilidad": "Disponible", "id_repartidor": 3}).status_code, 422)
         self.sign_in(7)
-        self.assertEqual(self.update(estado="Ocupado").status_code, 200)
+        self.assertEqual(self.update(estado="Ocupado").status_code, 403)
 
     def test_inactive_account_cannot_be_made_available(self):
         with Session(self.engine) as db:
@@ -105,14 +108,15 @@ class CourierTests(unittest.TestCase):
             db.get(Usuario, 9).activo = False
             db.commit()
         self.assertFalse(self.client.get(BASE).json()["delivery_disponible"])
-        self.assertEqual(self.update(estado="Disponible").status_code, 409)
+        self.assertEqual(self.update(estado="Disponible").status_code, 403)
 
     def test_history_failure_rolls_back_availability(self):
         def fail(*args):
             raise IntegrityError("fixture", {}, Exception("synthetic failure"))
+        self.sign_in(5)
         event.listen(HistorialRepartidor, "before_insert", fail)
         try:
-            response = self.update()
+            response = self.client.put('/api/repartidores/me', headers=HEADERS, json={'estado_disponibilidad':'No disponible'})
         finally:
             event.remove(HistorialRepartidor, "before_insert", fail)
         self.assertEqual(response.status_code, 409, response.text)

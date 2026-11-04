@@ -43,10 +43,13 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
   const menu = customerMenu.data;
   const queryError = catalog.error?.message ?? places.error?.message ?? customerMenu.error?.message;
   async function refreshData() {
-    setError('');
-    await invalidateMutation(`restaurantes/${restaurant}/pedidos`, cacheScope());
-    if (view === 'create') await catalog.refetch({cancelRefetch:false});
-    if (view === 'menu') await Promise.all([places.refetch({cancelRefetch:false}), ...(selected ? [customerMenu.refetch({cancelRefetch:false})] : [])]);
+    setError(''); setBusy(true);
+    try {
+      await invalidateMutation(`restaurantes/${restaurant}/pedidos`, cacheScope());
+      if (view === 'create') await catalog.refetch({cancelRefetch:false, throwOnError:true});
+      if (view === 'menu') await Promise.all([places.refetch({cancelRefetch:false, throwOnError:true}), ...(selected ? [customerMenu.refetch({cancelRefetch:false, throwOnError:true})] : [])]);
+    } catch (failure) { failed(failure); }
+    finally { setBusy(false); }
   }
   async function showDetail(id: number) {
     setBusy(true); setError(''); setDetailTab('detalle');

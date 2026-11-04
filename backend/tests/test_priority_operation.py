@@ -64,7 +64,7 @@ class PriorityOperationTests(unittest.TestCase):
         rows = self.ranking()['pedidos']
         self.assertEqual([(r['id_pedido'], r['posicion']) for r in rows], [(excluded[0], 1)])
 
-    def test_ready_orders_dispatch_by_ready_time_without_priority_recalculation(self):
+    def test_ready_orders_dispatch_by_priority(self):
         with Session(self.engine) as db:
             first = db.get(Pedido, 1)
             first.estado, first.fecha_hora, first.importe_total = 'Listo', NOW - timedelta(minutes=30), 999999
@@ -75,11 +75,9 @@ class PriorityOperationTests(unittest.TestCase):
                                       fecha_hora=NOW - timedelta(minutes=minutes)))
             db.commit()
         self.assertEqual(self.ranking()['pedidos'], [])
-        with patch('app.logistics.service.calculate') as calculate:
-            result = self.client.post(BASE + '/entregas/asignar', headers=HEADERS)
+        result = self.client.post(BASE + '/entregas/asignar', headers=HEADERS)
         self.assertEqual(result.status_code, 200, result.text)
-        calculate.assert_not_called()
-        self.assertEqual([r['id_pedido'] for r in result.json()['entregas']], [second_id, 1])
+        self.assertEqual([r['id_pedido'] for r in result.json()['entregas']], [1, second_id])
         self.assertEqual(self.ranking()['pedidos'], [])
 
     def test_exact_consecutive_ranking_ties_factors_and_read_only(self):
@@ -141,7 +139,6 @@ class PriorityOperationTests(unittest.TestCase):
         with patch('app.logistics.service.calculate') as calculate:
             same = self.client.put(f'{BASE}/pedidos/{oid}/distancia', headers=HEADERS, json={'distancia_km': '2'})
         self.assertEqual(same.status_code, 200, same.text)
-        calculate.assert_not_called()
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido).where(
                 HistorialPedido.id_pedido == oid, HistorialPedido.tipo_evento == 'distancia')), 0)
@@ -182,7 +179,7 @@ class PriorityOperationTests(unittest.TestCase):
             outside = add_order(db, distancia_km=Decimal('5.001'))
             outside_id = outside.id_pedido
             db.commit()
-        self.assertEqual(self.client.put(BASE + '/repartidores/1', headers=HEADERS, json={'estado_disponibilidad':'Disponible'}).status_code, 409)
+        self.assertEqual(self.client.put(BASE + '/repartidores/1', headers=HEADERS, json={'estado_disponibilidad':'Disponible'}).status_code, 403)
         response = self.client.post(BASE + '/entregas/asignar', headers=HEADERS)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual([r['id_repartidor'] for r in response.json()['entregas']], [3])

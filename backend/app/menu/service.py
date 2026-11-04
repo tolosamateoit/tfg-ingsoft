@@ -1,7 +1,8 @@
 """Pertenencia verificada en las consultas; guardado atómico de la receta."""
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select, text
+from decimal import Decimal, ROUND_HALF_UP
+from sqlalchemy import delete, select, text, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,9 +28,13 @@ def create_product(db: Session, restaurant_id: int, data: ProductInput) -> Produ
 
 
 def update_product(db: Session, restaurant_id: int, product_id: int, data: ProductInput) -> Producto:
+    lock_recipe_relations(db)
     product = product_in_restaurant(db, restaurant_id, product_id, lock=True)
     for name, value in data.model_dump().items():
+        if name == 'costo_unitario' and db.scalar(select(RecetaDetalle.id_producto).where(RecetaDetalle.id_producto == product_id).limit(1)):
+            continue
         setattr(product, name, value)
+    refresh_recipe_costs(db, restaurant_id)
     db.commit()
     return product
 
@@ -69,10 +74,26 @@ def save_recipe(db: Session, restaurant_id: int, product_id: int, data: RecipeIn
     try:
         db.execute(delete(RecetaDetalle).where(RecetaDetalle.id_producto == product_id))
         db.add_all([RecetaDetalle(id_producto=product_id, **item.model_dump()) for item in data.detalles])
+        if not data.detalles:
+            product_in_restaurant(db, restaurant_id, product_id).costo_unitario = Decimal(0)
         db.flush()
+        refresh_recipe_costs(db, restaurant_id)
         result = recipe_output(db, restaurant_id, product_id)
         db.commit()
         return result
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "No se pudo guardar la receta. Actualizá los datos y volvé a intentar.") from None
+
+
+def refresh_recipe_costs(db: Session, restaurant_id: int):
+    """Cantidad expresada en la unidad del insumo; envasados admiten equivalencia 1:1."""
+    db.flush()
+    rows = db.execute(select(Producto, func.sum(RecetaDetalle.cantidad * Insumo.costo_unitario))
+        .join(RecetaDetalle).join(Insumo)
+        .where(Producto.id_restaurante == restaurant_id, Insumo.id_restaurante == restaurant_id)
+        .group_by(Producto.id_producto)).all()
+    for product, cost in rows:
+        if cost > Decimal('9999999999999999.99'):
+            raise HTTPException(422, 'El costo de la receta supera el máximo permitido.')
+        product.costo_unitario = cost.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)

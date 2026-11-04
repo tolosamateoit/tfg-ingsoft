@@ -55,10 +55,10 @@ class DailyOperationTests(unittest.TestCase):
         self.assertEqual([r['id_pedido'] for r in data['activos']], [preparing_id, 1])
         self.assertEqual([r['prioridad']['posicion'] for r in data['activos']], [1, 2])
         self.assertEqual([r['id_pedido'] for r in data['listos']], [ready_id])
-        self.assertIsNone(data['listos'][0]['prioridad'])
+        self.assertEqual(data['listos'][0]['prioridad']['posicion'], 1)
         self.assertEqual(data['en_entrega'][0]['id_pedido'], route_id)
         self.assertIsNotNone(data['en_entrega'][0]['repartidor'])
-        self.assertEqual([c['id_repartidor'] for c in data['repartidores']], [3])
+        self.assertEqual([c['id_repartidor'] for c in data['repartidores']], [1, 3])
         self.assertEqual(data['total_finalizados'], 2)
         self.assertNotEqual(self.day('?limit=1&offset=1')['finalizados'][0]['id_pedido'], data['finalizados'][0]['id_pedido'])
         history = self.client.get('/api/pedidos?periodo=historial&limit=100').json()['pedidos']
@@ -84,7 +84,7 @@ class DailyOperationTests(unittest.TestCase):
         self.assertEqual(self.assign(1, 1, data['listos'][0]['version']).status_code, 409)
         row = self.day()['en_entrega'][0]
         self.assertEqual(row['id_repartidor'], 3)
-        self.assertNotIn(3, [r['id_repartidor'] for r in self.day()['repartidores']])
+        self.assertTrue(next(r for r in self.day()['repartidores'] if r['id_repartidor'] == 3)['entrega_activa'])
         path = f"/api/entregas/{row['id_entrega']}/estado"
         for state in ('En camino', 'Entregado', 'Entregado'):
             response = self.client.put(path, headers=HEADERS, json={'estado': state})

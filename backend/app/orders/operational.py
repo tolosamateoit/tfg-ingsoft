@@ -63,6 +63,9 @@ def operating_day(db, user, restaurant_id, limit=20, offset=0):
     unknown = unconfirmed_distances(db, ids)
     ranking = engine.ranked_snapshots([r[0] for r in active if r[0].estado in engine.PENDING], now, unknown)
     by_id = {o.id_pedido: engine.priority_output(o).model_copy(update={'posicion': i + 1}) for i, o in enumerate(ranking)}
+    ready_ranking = engine.ranked_snapshots([r[0] for r in active if r[0].estado == 'Listo'], now, unknown)
+    by_id.update({o.id_pedido: engine.priority_output(o).model_copy(update={'posicion': i + 1})
+                  for i, o in enumerate(ready_ranking)})
     by_order = {}
     for order, restaurant, client, since in rows:
         summary = order_summary(order, restaurant, client, since).model_dump()
@@ -71,9 +74,8 @@ def operating_day(db, user, restaurant_id, limit=20, offset=0):
         by_order[order.id_pedido] = OperatingOrder(**summary, version=versions.get(order.id_pedido, 0),
             distancia_km=order.distancia_km if order.id_pedido not in unknown else None, prioridad=by_id.get(order.id_pedido))
     result.activos = [by_order[o.id_pedido] for o in ranking]
-    result.listos = [by_order[r[0].id_pedido] for r in active if r[0].estado == 'Listo']
+    result.listos = [by_order[o.id_pedido] for o in ready_ranking]
     result.en_entrega = [by_order[r[0].id_pedido] for r in active if r[0].estado in {'Asignado', 'En camino'}]
     result.finalizados = [by_order[r[0].id_pedido] for r in closed]
-    result.repartidores = [r for r in list_couriers(db, user).repartidores
-        if r.activo and r.estado_disponibilidad == 'Disponible' and not r.entrega_activa]
+    result.repartidores = list_couriers(db, user).repartidores
     return result

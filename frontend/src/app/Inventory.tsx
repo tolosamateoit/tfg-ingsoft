@@ -41,7 +41,7 @@ export default function Inventory({ restaurant, onSessionExpired }: Props) {
     setBusy(true); setError(''); setNotice('');
     try {
       if (moving) await operationRequest(`${base}/insumos/${moving.id_insumo}/movimientos`, {
-        tipo: form.get('tipo'), cantidad: form.get('cantidad'), motivo: form.get('motivo'),
+        tipo: form.get('tipo') === 'restar' ? 'ajuste' : 'reposicion', cantidad: String(Number(form.get('cantidad')) * (form.get('tipo') === 'restar' ? -1 : 1)), motivo: form.get('motivo'),
       }, undefined, 'POST');
       else await operationRequest(`${base}/insumos${editor !== 'new' && editor ? `/${editor.id_insumo}` : ''}`, {
         nombre: form.get('nombre'), unidad: form.get('unidad'), costo_unitario: form.get('costo'),
@@ -72,11 +72,11 @@ export default function Inventory({ restaurant, onSessionExpired }: Props) {
     {(editor || moving) && <Dialog title={moving ? `Movimiento de ${moving.nombre}` : editor === 'new' ? 'Nuevo insumo' : 'Editar insumo'} busy={busy} onClose={() => { setEditor(null); setMoving(null); }}>
       {(error || queryError) && <p role="alert" className="auth-error">{error || queryError}</p>}
       <form className="menu-form" onSubmit={(event) => void save(event)}><fieldset disabled={busy}>
-        {moving ? <><label htmlFor="stock-type">Tipo</label><select id="stock-type" name="tipo"><option value="reposicion">Reposición</option><option value="ajuste">Ajuste</option></select>
-          <label htmlFor="stock-qty">Cantidad a sumar o restar ({moving.unidad})</label><input id="stock-qty" name="cantidad" type="number" step="0.000001" required />
+        {moving ? <><label htmlFor="stock-type">Tipo</label><select id="stock-type" name="tipo"><option value="reposicion">Agregar stock (+)</option><option value="restar">Restar stock (−)</option></select>
+          <label htmlFor="stock-qty">Cantidad a sumar o restar ({moving.unidad})</label><input id="stock-qty" name="cantidad" type="number" min="0.000001" step="0.000001" required />
           <label htmlFor="stock-reason">Motivo</label><input id="stock-reason" name="motivo" required maxLength={500} />
         </> : <><label htmlFor="stock-name">Nombre</label><input id="stock-name" name="nombre" required maxLength={150} defaultValue={editor && editor !== 'new' ? editor.nombre : ''}/>
-          <label htmlFor="stock-unit">Unidad de medida</label><input id="stock-unit" name="unidad" required maxLength={32} defaultValue={editor && editor !== 'new' ? editor.unidad : ''}/>
+          <label htmlFor="stock-unit">Unidad de medida</label><select id="stock-unit" name="unidad" required defaultValue={editor && editor !== 'new' ? editor.unidad : 'unidad'}><option value="unidad">Unidad</option><option value="kg">Kilogramo</option><option value="l">Litro</option></select>
           <label htmlFor="stock-cost">Costo unitario</label><input id="stock-cost" name="costo" type="number" min="0" step="0.01" required defaultValue={editor && editor !== 'new' ? editor.costo_unitario : '0'}/>
           <p>El stock inicial es cero. Registrá una reposición para cargar existencias.</p></>}
         <button className="primary-button" type="submit">{busy ? 'Guardando…' : 'Guardar'}</button>

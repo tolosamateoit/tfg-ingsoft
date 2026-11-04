@@ -76,7 +76,8 @@ test('cambios del ranking actualizan posiciones mostradas y el caso vacio es cla
 test('personal mantiene operaciones; analisis y alta de repartidor quedan para propietario', () => {
   const staff = {rol:'personal',id_restaurante:1};
   const paths = pagesFor(staff).map((p) => p.path);
-  for (const path of ['pedidos','catalogo','stock','entregas','repartidores']) assert.ok(paths.includes(path));
+  for (const path of ['pedidos','catalogo','stock','repartidores']) assert.ok(paths.includes(path));
+  assert.ok(!paths.includes('entregas'));
   for (const path of ['demanda','indicadores']) assert.ok(!paths.includes(path));
   const ownerPaths = pagesFor({...staff,rol:'propietario'}).map((p) => p.path);
   assert.ok(ownerPaths.includes('demanda') && ownerPaths.includes('indicadores'));

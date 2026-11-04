@@ -318,6 +318,8 @@ class AuthApiTests(unittest.TestCase):
                                      "/api/restaurantes/{id_restaurante}/productos/{id_producto}/receta",
                                      "/api/restaurantes", "/api/restaurantes/{id_restaurante}/menu",
                                      "/api/restaurantes/{id_restaurante}/pedidos",
+                                     "/api/restaurantes/{id_restaurante}/pedidos/operacion",
+                                     "/api/restaurantes/{id_restaurante}/predicciones/diaria",
                                      "/api/pedidos", "/api/pedidos/{id_pedido}",
                                      "/api/restaurantes/{id_restaurante}/stock",
                                      "/api/restaurantes/{id_restaurante}/pedidos/{id_pedido}/preparacion",

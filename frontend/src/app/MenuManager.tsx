@@ -18,7 +18,7 @@ function ProductForm({ product, busy, onSave, onCancel }: {
   product?: Product; busy: boolean; onSave: (data: ProductInput) => void; onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<ProductInput>({ nombre: product?.nombre ?? '', precio: product?.precio ?? '',
-    costo_unitario: product?.costo_unitario ?? '', activo: product?.activo ?? true,
+    costo_unitario: product?.costo_unitario ?? '0', activo: product?.activo ?? true,
     descripcion: product?.descripcion ?? '', imagen_url: product?.imagen_url ?? '' });
   function submit(event: FormEvent) { event.preventDefault(); onSave(draft); }
   return (
@@ -33,9 +33,10 @@ function ProductForm({ product, busy, onSave, onCancel }: {
             <input id="product-price" type="number" min="0" step="0.01" required value={draft.precio}
               onChange={(event) => setDraft({ ...draft, precio: event.target.value })} /></div>
           <div><label htmlFor="product-cost">Costo unitario ($)</label>
-            <input id="product-cost" type="number" min="0" step="0.01" required value={draft.costo_unitario}
+            <input id="product-cost" readOnly title="Se calcula al guardar la receta o equivalencia del producto envasado" type="number" min="0" step="0.01" required value={draft.costo_unitario}
               onChange={(event) => setDraft({ ...draft, costo_unitario: event.target.value })} /></div>
         </div>
+        <p className="muted">El costo se calcula con los insumos de la receta. Para envasados, registrá su equivalencia (por ejemplo, una botella por unidad).</p>
         <label htmlFor="product-description">Descripción (opcional)</label><textarea id="product-description" maxLength={1000} value={draft.descripcion ?? ''} onChange={(event) => setDraft({ ...draft, descripcion: event.target.value })}/>
         <label htmlFor="product-image">URL de imagen (opcional)</label><input id="product-image" maxLength={2000} value={draft.imagen_url ?? ''} placeholder="https://… o /images/…" onChange={(event) => setDraft({ ...draft, imagen_url: event.target.value })}/>
         <label className="checkbox-label"><input type="checkbox" checked={draft.activo}

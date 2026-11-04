@@ -74,8 +74,10 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
         db.add_all([DetallePedido(id_pedido=order.id_pedido, id_producto=item.id_producto,
                                  cantidad=item.cantidad, precio_unitario=by_id[item.id_producto].precio)
                     for item in data.detalles])
+        from app.demo_history.simulation import local_demo, MARKER
         db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario,
-                              tipo_evento="registro", estado="Nuevo", detalle=f'Registro del pedido. Distancia: {data.distancia_km} km.'))
+            tipo_evento='registro', estado='Nuevo', detalle=f'Registro del pedido. Distancia: {data.distancia_km} km.'
+            + (f' [{MARKER}]' if local_demo() else '')))
         db.flush()
         result = _order_output(db, user, order, restaurant, client.nombre)
         db.commit()
@@ -119,6 +121,9 @@ def scoped_orders(user: Usuario):
         return query.where(Cliente.id_usuario == user.id_usuario)
     if user.rol in {"personal", "propietario"} and user.id_restaurante is not None:
         return query.where(Pedido.id_restaurante == user.id_restaurante)
+    if user.rol == 'repartidor' and user.id_restaurante is not None:
+        return query.join(Entrega).join(Repartidor).where(Repartidor.id_usuario == user.id_usuario,
+            Pedido.id_restaurante == user.id_restaurante)
     raise HTTPException(403, "No tenés permiso para consultar pedidos.")
 
 
@@ -137,7 +142,7 @@ def state_since_query():
     ).correlate(Pedido).scalar_subquery()
 
 
-def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: str = "historial") -> OrderPage:
+def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: str = "historial", fecha=None) -> OrderPage:
     scoped = scoped_orders(user)
     if periodo not in {"dia", "historial"}:
         raise HTTPException(422, "Período inválido.")
@@ -150,6 +155,9 @@ def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: st
         else:
             start, end = operational_day_bounds(reference)
             scoped = scoped.where(Pedido.fecha_hora >= start, Pedido.fecha_hora < end)
+    if fecha is not None:
+        start, end = operational_day_bounds(fecha)
+        scoped = scoped.where(Pedido.fecha_hora >= start, Pedido.fecha_hora < end)
     total = db.scalar(select(func.count()).select_from(scoped.subquery()))
     rows = db.execute(scoped.add_columns(Restaurante.nombre, Cliente.nombre, state_since_query())
                       .join(Restaurante, Restaurante.id_restaurante == Pedido.id_restaurante)

@@ -80,7 +80,7 @@ export default function AuthPage() {
         <button className="primary-button login-submit" disabled={busy}>{busy ? 'Ingresando…' : 'Ingresar a mi espacio'}<Icon name="arrow"/></button>
       </form>{error && <p className="auth-error" role="alert">{error}</p>}
       {import.meta.env.DEV && __LOCAL_ACCOUNT_ACCESS__ && <div className="quick-access"><div className="divider-label"><span>Acceso por perfil</span></div><div className="quick-access-grid">
-        {[['propietario','Propietario','grid'],['personal','Personal','food'],['repartidor','Repartidor','truck'],['cliente','Cliente','people']].map(([role,label,icon]) => <button key={role} disabled={busy} onClick={() => void quickAccess(role)}><Icon name={icon} size={22}/><span>{label}</span></button>)}
+        {[['propietario','Propietario','grid'],['personal','Personal','food'],['repartidor','Repartidor 1','truck'],['repartidor_2','Repartidor 2','truck'],['repartidor_3','Repartidor 3','truck'],['cliente','Cliente','people']].map(([role,label,icon]) => <button key={role} disabled={busy} onClick={() => void quickAccess(role)}><Icon name={icon} size={22}/><span>{label}</span></button>)}
       </div></div>}<p className="login-security"><Icon name="check" size={16}/>Acceso protegido para tu equipo</p>
     </div><footer>Todo listo para un buen servicio.</footer></main>
   </div>;
@@ -88,7 +88,7 @@ export default function AuthPage() {
   return <QueryClientProvider client={queryClient}><div className={`app-shell${user.rol === 'cliente' ? ' app-shell--customer' : ''}`}>
     {mobileMenu && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)}/>}
     <aside className={`sidebar${mobileMenu ? ' sidebar--open' : ''}`}><a href={`#/${pages[0].path}`} className="app-brand" aria-label="Oliva, inicio">{brand}</a>
-      <div className="workspace-pill"><span className="workspace-avatar"><Icon name="food"/></span><div><strong>{user.id_restaurante ? `Restaurante ${user.id_restaurante}` : user.rol === 'cliente' ? 'Mi espacio' : 'Oliva'}</strong><small>{roleLabels[user.rol]}</small></div></div>
+      <div className="workspace-pill"><span className="workspace-avatar"><Icon name="food"/></span><div><strong>{user.id_restaurante ? (user.restaurante ?? 'Mi restaurante') : user.rol === 'cliente' ? 'Mi espacio' : 'Oliva'}</strong><small>{roleLabels[user.rol]}</small></div></div>
       <nav aria-label="Navegación principal">{pages.map((page, index) => <div key={page.path}>{(index === 0 || pages[index-1].group !== page.group) && <p className="nav-group">{page.group}</p>}
         <a href={`#/${page.path}`} className={`nav-link${current.path === page.path ? ' nav-link--active' : ''}`} aria-current={current.path === page.path ? 'page' : undefined}><Icon name={page.icon}/>{page.label}{current.path === page.path && <span className="nav-active-dot"/>}</a>
       </div>)}</nav>
@@ -108,7 +108,7 @@ export default function AuthPage() {
             {user.rol === 'propietario' && current.path === 'demanda' && <Analytics restaurant={user.id_restaurante} view="forecast" onSessionExpired={sessionExpired}/>}
             {user.rol === 'propietario' && current.path === 'indicadores' && <Analytics restaurant={user.id_restaurante} view="metrics" onSessionExpired={sessionExpired}/>}
           </>}
-          {user.rol === 'repartidor' && user.id_restaurante !== null && (current.path === 'entregas' ? <Logistics restaurant={user.id_restaurante} courier view="deliveries" onSessionExpired={sessionExpired}/> : <Couriers restaurant={null} onSessionExpired={sessionExpired}/>)}
+          {user.rol === 'repartidor' && user.id_restaurante !== null && (current.path === 'pedidos-reparto' ? <Logistics restaurant={user.id_restaurante} courier view="deliveries" onSessionExpired={sessionExpired}/> : <Couriers restaurant={null} onSessionExpired={sessionExpired}/>)}
           {user.rol === 'cliente' && <Orders restaurant={null} view={current.path === 'menu' ? 'menu' : 'list'} onSessionExpired={sessionExpired}/>}
         </div>
       </main><footer className="workspace-footer"><span>Oliva · Hecho para tu restaurante</span><span>Que sea un buen servicio.</span></footer>

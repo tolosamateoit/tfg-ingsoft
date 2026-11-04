@@ -28,20 +28,28 @@ def delivery_cost(restaurant: Restaurante, order: Pedido) -> Decimal:
     return cost
 
 
-def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selection: AssignmentInput | None = None) -> AssignmentOutput:
+def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selection: AssignmentInput | None = None, *, demo_only=False) -> AssignmentOutput:
     lock_order_relations(db)
     restaurant = db.scalar(select(Restaurante).where(Restaurante.id_restaurante == restaurant_id).with_for_update(read=True))
     if restaurant is None:
         raise HTTPException(404, "Restaurante no disponible.")
-    # Despacho separado del ranking de ingreso: primero quien lleva más tiempo listo.
+    # Bloquear primero en orden estable; luego ordenar por el puntaje vigente.
     ready_query = select(Pedido).where(Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Listo',
         ~exists(select(Entrega.id_entrega).where(Entrega.id_pedido == Pedido.id_pedido)))
+    if demo_only:
+        ready_query = ready_query.where(exists(select(HistorialPedido.id_historial).where(
+            HistorialPedido.id_pedido == Pedido.id_pedido, HistorialPedido.tipo_evento == 'registro',
+            HistorialPedido.detalle.endswith('[demo_simulacion]'))))
     if selection is not None:
         ready_query = ready_query.where(Pedido.id_pedido == selection.id_pedido)
     ready = db.scalars(ready_query
         .order_by(func.coalesce(state_since_query(), Pedido.fecha_hora), Pedido.fecha_hora, Pedido.id_pedido)
         .with_for_update()).all()
     unknown = unconfirmed_distances(db, [o.id_pedido for o in ready])
+    now = db.scalar(select(func.now()))
+    for order in ready:
+        calculate(order, now, distance_known=order.id_pedido not in unknown)
+    ready.sort(key=lambda order: (-order.puntaje_prioridad, order.fecha_hora, order.id_pedido))
     eligible = [order for order in ready if order.id_pedido not in unknown and order.distancia_km <= 5]
     candidates = ranked_couriers(db, restaurant_id, courier_id=selection.id_repartidor if selection else None)
     if selection is not None:
@@ -78,7 +86,8 @@ def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selectio
             courier.estado_disponibilidad = "Ocupado"
             db.add(HistorialRepartidor(id_repartidor=courier.id_repartidor, estado="Ocupado"))
             db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario, tipo_evento="asignacion",
-                                  estado="Asignado", detalle=f"Repartidor asignado: {account.nombre} (#{courier.id_repartidor})."))
+                                  estado="Asignado", detalle=f"Repartidor asignado: {account.nombre} (#{courier.id_repartidor})."
+                                  + (' Elegido por disponibilidad y entregas exitosas; empates por nombre.' if selection is None else ' Selección manual.')))
             created.append(delivery)
         db.flush()
         ids = [delivery.id_entrega for delivery in created]
@@ -116,8 +125,11 @@ def delivery_output(row) -> DeliveryOutput:
                           distancia_km=order.distancia_km)
 
 
-def deliveries(db: Session, user: Usuario, offset: int, *, warnings=None) -> list[DeliveryOutput]:
-    rows = db.execute(delivery_query(user)
+def deliveries(db: Session, user: Usuario, offset: int, *, warnings=None, active_only=False) -> list[DeliveryOutput]:
+    query = delivery_query(user)
+    if active_only:
+        query = query.where(Entrega.estado.in_(IN_PROGRESS))
+    rows = db.execute(query
             .order_by(Pedido.fecha_hora.desc(), Pedido.id_pedido.desc()).offset(offset).limit(20)).all()
     extra = summary_data(db, [row[1].id_pedido for row in rows])
     from app.analytics.operational import owner_order_warnings
@@ -224,8 +236,11 @@ def change_delivery_state(db: Session, user: Usuario, delivery_id: int, data: De
     try:
         delivery.estado = data.estado
         order.estado = data.estado
+        if data.estado == 'Entregado' and order.estado_pago != 'pagado':
+            order.estado_pago = 'pagado'
         db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario, tipo_evento="entrega",
-                              estado=data.estado, detalle=f"Entrega #{delivery_id}: {data.estado}."))
+                              estado=data.estado, detalle=f"Entrega #{delivery_id}: {data.estado}."
+                              + (' Pago confirmado.' if data.estado == 'Entregado' else '')))
         db.flush()
         if data.estado in FINISHED:
             courier = db.get(Repartidor, delivery.id_repartidor, with_for_update=True)

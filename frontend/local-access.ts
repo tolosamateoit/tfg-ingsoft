@@ -2,7 +2,7 @@ import type { Plugin } from 'vite';
 
 // Exclusivo del servidor de desarrollo. Estas variables nunca se envían a React.
 export function localAccess(env: Record<string, string>): Plugin {
-  const roles = ['propietario', 'personal', 'repartidor', 'cliente'];
+  const roles = ['propietario', 'personal', 'repartidor', 'repartidor_2', 'repartidor_3', 'cliente'];
   return {
     name: 'private-local-account-access', apply: 'serve',
     configureServer(server) {

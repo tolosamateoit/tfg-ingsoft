@@ -81,6 +81,8 @@ def list_couriers(db: Session, user: Usuario) -> CourierPage:
 
 
 def update_availability(db: Session, user: Usuario, courier_id: int | None, data: AvailabilityInput) -> CourierOutput:
+    if user.rol != 'repartidor':
+        raise HTTPException(403, 'Cada repartidor puede modificar solamente su disponibilidad.')
     lock_order_relations(db)
     query = select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario).where(
         Usuario.id_restaurante == user.id_restaurante, Usuario.rol == "repartidor")

@@ -1,6 +1,17 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+from app.demo_history.simulation import local_demo, start
+
+
+@asynccontextmanager
+async def lifespan(app):
+    worker = start() if local_demo() else None
+    yield
+    if worker:
+        worker[0].set()
+        worker[1].join(timeout=10)
 
 from app.api.health import router as health_router
 from app.api.auth import router as auth_router
@@ -14,6 +25,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.support import router as support_router
 
 app = FastAPI(
+    lifespan=lifespan,
     title="Demo académica · Pedidos y delivery",
     description="Demo académica. Autenticación y gestión de productos y recetas por restaurante.",
     version="0.4.0",
