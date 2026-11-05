@@ -234,7 +234,7 @@ def owner_order_warnings(db, user, order_ids, *, reference_day=None, target_orde
 
 
 def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected: date | None = None):
-    if user.rol != 'propietario' or user.id_restaurante != restaurant:
+    if user.rol not in {'propietario', 'personal'} or user.id_restaurante != restaurant:
         raise HTTPException(403, 'No tenés permiso para consultar indicadores y alertas.')
     day = operational_date(db, restaurant)
     if day is None:

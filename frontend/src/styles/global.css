@@ -1937,3 +1937,9 @@ strong {
 .daily-order-distance form > div { display:flex; align-items:center; gap:8px }
 .daily-order-distance input { max-width:145px }
 .daily-order-distance button { font-size:12px; padding:8px }
+
+.shortage-info { position: relative; }
+.shortage-info summary { cursor: pointer; list-style: none; }
+.shortage-info summary::-webkit-details-marker { display: none; }
+.shortage-info small { display: none; position: absolute; z-index: 2; right: 0; top: 100%; min-width: 190px; padding: .5rem; background: #fff; color: #392d29; border: 1px solid #ddd; border-radius: .4rem; box-shadow: 0 3px 10px #0002; }
+.shortage-info:hover small, .shortage-info[open] small, .shortage-info:focus-within small { display: block; }

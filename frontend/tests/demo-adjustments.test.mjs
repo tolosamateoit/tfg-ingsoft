@@ -37,13 +37,14 @@ test('el menú del cliente muestra y bloquea productos sin stock', () => {
 
 test('menú interno distingue el estado administrativo de la disponibilidad', () => {
   queryClient.setQueryData(apiKey('restaurantes/1/productos'), [
-    {id_producto:1, id_restaurante:1, nombre:'Pizza', precio:'10', costo_unitario:'4', activo:true, disponible_stock:false, descripcion:null, imagen_url:null},
+    {id_producto:1, id_restaurante:1, nombre:'Pizza', precio:'10', costo_unitario:'4', activo:true, disponible_stock:false, insumos_faltantes:['Papa'], descripcion:null, imagen_url:null},
     {id_producto:2, id_restaurante:1, nombre:'Bebida', precio:'10', costo_unitario:'4', activo:false, disponible_stock:true, descripcion:null, imagen_url:null},
   ]);
   queryClient.setQueryData(apiKey('restaurantes/1/insumos'), []);
   const html = render(MenuManager, {restaurant:1, onSessionExpired:noop});
   assert.match(html, /product-state--unavailable">No disponible/);
-  assert.match(html, /Inactivo/);
+  assert.match(html, /Faltan insumos: Papa/);
+  assert.doesNotMatch(html, /Inactivo/);
 });
 
 test('preparación presenta saldos y seguimiento oculta explicaciones técnicas', () => {

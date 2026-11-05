@@ -103,7 +103,49 @@ class DemoAdjustmentsTests(unittest.TestCase):
         with Session(self.engine) as db:
             self.assertEqual(db.get(Insumo, 1).stock_actual, 4)
 
+    def test_low_stock_names_and_logical_deactivation(self):
+        with Session(self.engine) as db:
+            db.get(Insumo, 1).stock_actual = Decimal(1)
+            name = db.get(Insumo, 1).nombre
+            product_name = db.get(Producto, 1).nombre
+            db.commit()
+        product = next(p for p in self.client.get(BASE + '/productos').json() if p['id_producto'] == 1)
+        self.assertFalse(product['disponible_stock'])
+        self.assertEqual(product['insumos_faltantes'], [name])
+        self.sign_in(7)
+        response = self.client.delete(BASE + '/insumos/1', headers=HEADERS)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn(product_name, response.json()['detail'])
+        self.assertEqual(self.client.delete(BASE + '/productos/1', headers=HEADERS).status_code, 200)
+        # El pedido nuevo todavía reserva este insumo aunque el producto haya sido retirado.
+        self.assertEqual(self.client.delete(BASE + '/insumos/1', headers=HEADERS).status_code, 409)
+        with Session(self.engine) as db:
+            db.get(Pedido, 1).estado = 'Cancelado'
+            db.commit()
+        self.assertEqual(self.client.delete(BASE + '/insumos/1', headers=HEADERS).status_code, 200)
+        self.assertNotIn(1, [x['id_insumo'] for x in self.client.get(BASE + '/insumos').json()])
+        self.assertEqual(self.post(BASE + '/insumos/1/movimientos', {'tipo':'reposicion','cantidad':'1'}).status_code, 404)
+        with Session(self.engine) as db:
+            self.assertIsNotNone(db.get(RecetaDetalle, (1, 1)))
+            self.assertFalse(db.get(Producto, 1).activo)
+            self.assertFalse(db.get(Insumo, 1).activo)
+        self.sign_in(3)
+        self.assertNotIn(1, [x['id_producto'] for x in self.client.get(BASE + '/menu').json()['productos']])
+
+    def test_staff_cannot_edit_recipes_or_deactivate(self):
+        self.assertEqual(self.put(BASE + '/productos/1/receta', {'detalles':[]}).status_code, 403)
+        self.assertEqual(self.client.delete(BASE + '/productos/1', headers=HEADERS).status_code, 403)
+        self.assertEqual(self.client.delete(BASE + '/insumos/1', headers=HEADERS).status_code, 403)
+
+    def test_simulation_delay_adds_ten_to_each_random_draw(self):
+        from unittest.mock import patch
+        from app.demo_history.simulation import delay
+        with patch('app.demo_history.simulation.randint', side_effect=[15, 25]):
+            self.assertEqual(delay(1, 'Nuevo'), 25)
+            self.assertEqual(delay(1, 'Listo'), 35)
+
     def test_recipe_cannot_overcommit_pending_orders(self):
+        self.sign_in(7)
         response = self.put(BASE + '/productos/1/receta', {'detalles':[{'id_insumo':1, 'cantidad':'6', 'unidad':'kg'}]})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(self.client.get(BASE + '/productos/1/receta').json()['detalles'][0]['cantidad'], '1.000000')

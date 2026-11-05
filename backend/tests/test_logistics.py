@@ -187,9 +187,9 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 1)
 
-    def test_staff_manages_delivery_and_distances_lock_after_assignment(self):
+    def test_staff_cannot_manage_delivery_and_distances_lock_after_assignment(self):
         delivery = self.make_delivery()
-        self.assertEqual(self.client.put(f"/api/entregas/{delivery}/estado", headers=HEADERS, json={"estado": "En camino"}).status_code, 200)
+        self.assertEqual(self.client.put(f"/api/entregas/{delivery}/estado", headers=HEADERS, json={"estado": "En camino"}).status_code, 403)
         self.assertEqual(self.client.put(BASE + "/pedidos/1/distancia", headers=HEADERS, json={"distancia_km": "3"}).status_code, 409)
         self.sign_in(2)
         self.assertEqual(self.client.get("/api/entregas").json(), [])

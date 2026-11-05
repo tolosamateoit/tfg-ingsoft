@@ -225,6 +225,8 @@ def ranked_couriers(db: Session, restaurant_id: int, *, courier_id=None):
 
 
 def change_delivery_state(db: Session, user: Usuario, delivery_id: int, data: DeliveryStateInput) -> TrackingOutput:
+    if user.rol != "repartidor":
+        raise HTTPException(403, "Solo el repartidor asignado puede actualizar la entrega.")
     lock_order_relations(db)
     row = db.execute(delivery_query(user).where(Entrega.id_entrega == delivery_id).with_for_update()).first()
     if row is None:

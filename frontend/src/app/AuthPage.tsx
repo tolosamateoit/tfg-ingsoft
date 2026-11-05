@@ -100,13 +100,13 @@ export default function AuthPage() {
         {error && <p role="alert" className="auth-error">{error}</p>}<div className="page-content" key={`${user.id_usuario}-${user.id_restaurante}-${current.path}`}>
           {current.path === 'soporte' && <AccountSupport onSessionExpired={sessionExpired}/>}
           {staff && user.id_restaurante !== null && <>
-            {current.path === 'catalogo' && <MenuManager restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
-            {current.path === 'stock' && <Inventory restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
+            {current.path === 'catalogo' && <MenuManager owner={user.rol === 'propietario'} restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
+            {current.path === 'stock' && <Inventory owner={user.rol === 'propietario'} restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
             {(current.path === 'pedidos' || current.path === 'nuevo-pedido') && <Orders restaurant={user.id_restaurante} view={current.path === 'nuevo-pedido' ? 'create' : 'list'} onSessionExpired={sessionExpired}/>}
             {current.path === 'repartidores' && <Couriers restaurant={user.id_restaurante} owner={user.rol === 'propietario'} onSessionExpired={sessionExpired}/>}
             {current.path === 'entregas' && <Logistics restaurant={user.id_restaurante} courier={false} view="deliveries" onSessionExpired={sessionExpired}/>}
-            {user.rol === 'propietario' && current.path === 'demanda' && <Analytics restaurant={user.id_restaurante} view="forecast" onSessionExpired={sessionExpired}/>}
-            {user.rol === 'propietario' && current.path === 'indicadores' && <Analytics restaurant={user.id_restaurante} view="metrics" onSessionExpired={sessionExpired}/>}
+            {current.path === 'demanda' && <Analytics restaurant={user.id_restaurante} view="forecast" onSessionExpired={sessionExpired}/>}
+            {current.path === 'indicadores' && <Analytics restaurant={user.id_restaurante} view="metrics" onSessionExpired={sessionExpired}/>}
           </>}
           {user.rol === 'repartidor' && user.id_restaurante !== null && (current.path === 'pedidos-reparto' ? <Logistics restaurant={user.id_restaurante} courier view="deliveries" onSessionExpired={sessionExpired}/> : <Couriers restaurant={null} onSessionExpired={sessionExpired}/>)}
           {user.rol === 'cliente' && <Orders restaurant={null} view={current.path === 'menu' ? 'menu' : 'list'} onSessionExpired={sessionExpired}/>}

@@ -29,3 +29,14 @@ class PresentationMigrationTests(unittest.TestCase):
         self.assertNotIn("DELETE FROM", sql)
         self.assertEqual((BACKEND.parent / "docs/sql/0003_producto_presentacion.sql").read_text(encoding="utf-8"),
                          "-- SOLO PARA REVISION. NO APLICADO A SUPABASE.\n" + sql)
+
+
+class IngredientMigrationTests(unittest.TestCase):
+    def test_logical_deactivation_migration_preserves_existing_records(self):
+        output = io.StringIO()
+        config = Config(str(BACKEND / "alembic.ini"), output_buffer=output)
+        with patch("app.db.engine.build_engine", side_effect=AssertionError("No conectar")):
+            command.upgrade(config, "0003_producto_presentacion:0004_insumo_activo", sql=True)
+        sql = output.getvalue()
+        self.assertIn("ALTER TABLE public.insumo ADD COLUMN activo BOOLEAN DEFAULT true NOT NULL", sql)
+        self.assertNotIn("DELETE FROM", sql)

@@ -9,9 +9,9 @@ import Orders from './Orders';
 
 type Ingredient = { id_insumo: number; nombre: string; unidad: string; stock_actual: string; costo_unitario: string };
 type Movement = { id_movimiento: number; nombre: string; unidad: string; id_pedido: number | null; fecha_hora: string; tipo: string; cantidad: string; motivo: string | null };
-type Props = { restaurant: number; onSessionExpired: () => void };
+type Props = { owner: boolean; restaurant: number; onSessionExpired: () => void };
 
-export default function Inventory({ restaurant, onSessionExpired }: Props) {
+export default function Inventory({ owner, restaurant, onSessionExpired }: Props) {
   const [offset, setOffset] = useState(0);
   const [editor, setEditor] = useState<Ingredient | 'new' | null>(null);
   const [moving, setMoving] = useState<Ingredient | null>(null);
@@ -49,6 +49,12 @@ export default function Inventory({ restaurant, onSessionExpired }: Props) {
       setEditor(null); setMoving(null); setNotice('Inventario actualizado.');
     } catch (failure) { failed(failure); } finally { setBusy(false); }
   }
+  async function remove(row: Ingredient) {
+    if (!window.confirm(`¿Dar de baja ${row.nombre}?`)) return;
+    setBusy(true); setError('');
+    try { await operationRequest(`${base}/insumos/${row.id_insumo}`, undefined, undefined, 'DELETE'); await load(); setNotice('Insumo dado de baja.'); }
+    catch (failure) { failed(failure); } finally { setBusy(false); }
+  }
   return <section className="menu-manager" aria-label="Insumos y stock">
     <div className="menu-heading"><h2>Existencias de tu cocina</h2><div className="menu-actions">
       <button className="primary-button" disabled={busy} onClick={() => { setError(''); setEditor('new'); }}>Nuevo insumo</button>
@@ -60,7 +66,7 @@ export default function Inventory({ restaurant, onSessionExpired }: Props) {
     <div className="catalog-grid">{rows.map((row) => <article className="product-card" key={row.id_insumo}>
       <h3>{row.nombre}</h3><p className={Number(row.stock_actual) < 0 ? 'auth-error' : 'order-total'}>{Number(row.stock_actual).toLocaleString('es-AR', { maximumFractionDigits: 6 })} {row.unidad}</p>
       <p>Costo por {row.unidad}: {formatMoney(row.costo_unitario)}</p><div className="menu-actions">
-        <button onClick={() => { setError(''); setEditor(row); }}>Editar insumo</button><button onClick={() => { setError(''); setMoving(row); }}>Registrar movimiento</button>
+        <button onClick={() => { setError(''); setEditor(row); }}>Editar insumo</button>{owner && <button disabled={busy} onClick={() => void remove(row)}>Dar de baja</button>}<button onClick={() => { setError(''); setMoving(row); }}>Registrar movimiento</button>
       </div></article>)}</div>
     <h2>Movimientos de stock</h2><p>Reposiciones, ajustes y consumos automáticos de preparación. Un ajuste indica la diferencia que se suma o resta al stock.</p>
     <div className="stock-history">{movements.map((row) => <article className="product-card" key={row.id_movimiento}>

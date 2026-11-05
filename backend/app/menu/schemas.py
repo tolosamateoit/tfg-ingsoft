@@ -48,6 +48,7 @@ class ProductOutput(ProductInput):
     id_producto: int
     id_restaurante: int
     disponible_stock: bool = False
+    insumos_faltantes: list[str] = []
 
     @field_serializer("precio", "costo_unitario")
     def money_as_text(self, value: Decimal) -> str:

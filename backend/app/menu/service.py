@@ -27,13 +27,18 @@ def create_product(db: Session, restaurant_id: int, data: ProductInput) -> Produ
     return product
 
 
-def update_product(db: Session, restaurant_id: int, product_id: int, data: ProductInput) -> Producto:
+def update_product(db: Session, restaurant_id: int, product_id: int, data: ProductInput, *, allow_activation=True) -> Producto:
     lock_recipe_relations(db)
     product = product_in_restaurant(db, restaurant_id, product_id, lock=True)
+    if not allow_activation and product.activo != data.activo:
+        raise HTTPException(403, "Solo el propietario puede retirar o reactivar productos.")
     for name, value in data.model_dump().items():
         if name == 'costo_unitario' and db.scalar(select(RecetaDetalle.id_producto).where(RecetaDetalle.id_producto == product_id).limit(1)):
             continue
         setattr(product, name, value)
+    if product.activo and db.scalar(select(RecetaDetalle.id_insumo).join(Insumo).where(
+        RecetaDetalle.id_producto == product_id, Insumo.activo.is_(False)).limit(1)):
+        raise HTTPException(409, "La receta contiene insumos dados de baja.")
     refresh_recipe_costs(db, restaurant_id)
     db.commit()
     return product
@@ -62,7 +67,7 @@ def save_recipe(db: Session, restaurant_id: int, product_id: int, data: RecipeIn
     product_in_restaurant(db, restaurant_id, product_id, lock=True)
     ingredient_ids = [item.id_insumo for item in data.detalles]
     ingredients = db.scalars(
-        select(Insumo).where(Insumo.id_restaurante == restaurant_id, Insumo.id_insumo.in_(ingredient_ids))
+        select(Insumo).where(Insumo.id_restaurante == restaurant_id, Insumo.activo.is_(True), Insumo.id_insumo.in_(ingredient_ids))
         .order_by(Insumo.id_insumo).with_for_update(read=True)
     ).all() if ingredient_ids else []
     by_id = {ingredient.id_insumo: ingredient for ingredient in ingredients}

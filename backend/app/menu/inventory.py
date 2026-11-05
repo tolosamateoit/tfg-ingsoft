@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Insumo, MovimientoStock, RecetaDetalle
+from app.db.models import Insumo, MovimientoStock, RecetaDetalle, Producto
 from app.menu.schemas import InputModel, Money
 from app.menu.service import lock_recipe_relations, refresh_recipe_costs
 
@@ -35,7 +35,7 @@ class MovementInput(InputModel):
 
 def ingredient(db: Session, restaurant_id: int, ingredient_id: int):
     result = db.scalar(select(Insumo).where(Insumo.id_restaurante == restaurant_id,
-                       Insumo.id_insumo == ingredient_id).with_for_update())
+                       Insumo.id_insumo == ingredient_id, Insumo.activo.is_(True)).with_for_update())
     if result is None:
         raise HTTPException(404, "Insumo no disponible en este restaurante.")
     return result
@@ -75,5 +75,25 @@ def record_movement(db: Session, restaurant_id: int, ingredient_id: int, data: M
     row.stock_actual += data.cantidad
     db.add(MovimientoStock(id_insumo=ingredient_id, tipo=data.tipo, cantidad=data.cantidad,
                           motivo=f"Usuario #{actor_id}" + (f": {data.motivo}" if data.motivo else '')))
+    db.commit()
+    return row
+
+
+def deactivate_ingredient(db: Session, restaurant_id: int, ingredient_id: int):
+    lock_recipe_relations(db)
+    row = ingredient(db, restaurant_id, ingredient_id)
+    names = db.scalars(select(Producto.nombre).join(RecetaDetalle).where(
+        RecetaDetalle.id_insumo == ingredient_id, Producto.id_restaurante == restaurant_id,
+        Producto.activo.is_(True)).order_by(Producto.nombre)).all()
+    if names:
+        raise HTTPException(409, "El insumo se utiliza en productos activos: " + ", ".join(names) + ".")
+    from app.db.models import DetallePedido, Pedido
+    pending = db.scalar(select(Pedido.id_pedido).join(DetallePedido).join(
+        RecetaDetalle, RecetaDetalle.id_producto == DetallePedido.id_producto).where(
+        Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Nuevo',
+        RecetaDetalle.id_insumo == ingredient_id).limit(1))
+    if pending:
+        raise HTTPException(409, "El insumo está reservado para pedidos pendientes.")
+    row.activo = False
     db.commit()
     return row

@@ -8,10 +8,11 @@ export type Product = {
   costo_unitario: string;
   activo: boolean;
   disponible_stock: boolean;
+  insumos_faltantes: string[];
   descripcion: string | null;
   imagen_url: string | null;
 };
-export type ProductInput = Omit<Product, 'id_producto' | 'id_restaurante' | 'disponible_stock'>;
+export type ProductInput = Omit<Product, 'id_producto' | 'id_restaurante' | 'disponible_stock' | 'insumos_faltantes'>;
 export type Ingredient = { id_insumo: number; nombre: string; unidad: string };
 export type RecipeItem = { id_insumo: number; cantidad: string; unidad: string };
 export type Recipe = { id_producto: number; detalles: (RecipeItem & { nombre: string })[] };

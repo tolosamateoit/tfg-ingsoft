@@ -54,5 +54,5 @@ def list_deliveries(db: DB, user: DeliveryReader, offset: Annotated[int, Query(g
 
 
 @router.put("/entregas/{id_entrega}/estado", response_model=TrackingOutput)
-def update_delivery(id_entrega: PositiveId, data: DeliveryStateInput, db: DB, user: DeliveryReader):
+def update_delivery(id_entrega: PositiveId, data: DeliveryStateInput, db: DB, user: Courier):
     return change_delivery_state(db, user, id_entrega, data)

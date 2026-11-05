@@ -5,6 +5,7 @@ de etapa: nunca se acumula tiempo con el servidor apagado. Sin pedidos pendiente
 solo se descubre trabajo cada 30 segundos; el resto del reloj vive en memoria.
 """
 import logging
+from random import randint
 from threading import Event, Thread
 from time import monotonic
 
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.config import get_auth_settings
 from app.auth.database import get_engine
-from app.db.models import Pedido, HistorialPedido, Usuario, Entrega
+from app.db.models import Pedido, HistorialPedido, Usuario, Entrega, Repartidor
 
 MARKER = 'demo_simulacion'
 ACTIVE = ('Nuevo', 'En preparación', 'Listo', 'Asignado', 'En camino')
@@ -29,7 +30,7 @@ def local_demo():
 
 
 def delay(order_id, state):
-    return 15 + (order_id + len(state)) % 11
+    return randint(15, 25) + 10
 
 
 def advance(db, order_id, *, expected_state=None, ready_ids=None):
@@ -59,6 +60,10 @@ def advance(db, order_id, *, expected_state=None, ready_ids=None):
     else:
         delivery = db.scalar(select(Entrega).where(Entrega.id_pedido == order_id))
         if delivery:
+            actor = db.scalar(select(Usuario).join(Repartidor, Repartidor.id_usuario == Usuario.id_usuario).where(
+                Repartidor.id_repartidor == delivery.id_repartidor, Usuario.id_restaurante == order.id_restaurante))
+            if actor is None:
+                return order.estado
             change_delivery_state(db, actor, delivery.id_entrega, DeliveryStateInput(
                 estado='En camino' if order.estado == 'Asignado' else 'Entregado'))
     return order.estado

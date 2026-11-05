@@ -48,7 +48,7 @@ test('Pedidos es la entrada por defecto y las rutas viejas redirigen sin aparece
     const paths=pagesFor({rol,id_restaurante:2}).map(p=>p.path);
     assert.equal(paths[0],'pedidos');
     assert.ok(!paths.includes('resumen')&&!paths.includes('prioridades'));
-    assert.equal(paths.includes('indicadores'),rol==='propietario');
+    assert.ok(paths.includes('indicadores'));
   }
   assert.equal(canonicalPath('resumen'),'pedidos');
   assert.equal(canonicalPath('prioridades'),'pedidos');
@@ -82,7 +82,7 @@ test('cada estado muestra solo sus acciones validas y no inventa distancia pendi
   assert.match(card(data.day.listos[0]),/Enviar a entrega/);
   assert.match(card(data.day.listos[0]),/Elegí un repartidor/);
   assert.match(card(data.day.listos[0]),/¿Por qué esta prioridad/);
-  assert.match(card(data.day.en_entrega[0]),/Iniciar entrega/);
+  assert.doesNotMatch(card(data.day.en_entrega[0]),/Iniciar entrega|Finalizar entrega/);
   const address = card({...fresh, direccion_entrega:'Belgrano 123', referencia_local:'Puerta verde'});
   assert.match(address,/Belgrano 123/);
   assert.match(address,/<small>Puerta verde<\/small>/);

@@ -110,6 +110,7 @@ class Insumo(Base):
     __table_args__ = (CheckConstraint("costo_unitario >= 0", name="costo_unitario_no_negativo"),)
 
     id_insumo: Mapped[int] = primary_key()
+    activo: Mapped[bool] = mapped_column(Boolean, server_default="true", default=True)
     id_restaurante: Mapped[int] = reference("restaurante.id_restaurante")
     nombre: Mapped[str] = mapped_column(Text)
     unidad: Mapped[str] = mapped_column(Text)

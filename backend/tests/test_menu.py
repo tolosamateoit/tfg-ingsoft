@@ -43,7 +43,7 @@ class MenuApiTests(unittest.TestCase):
         override_database(self.app, self.engine)
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
-        self.sign_in()
+        self.sign_in(7)
 
     def sign_in(self, user=1):
         self.client.cookies.clear()
@@ -216,7 +216,7 @@ class MenuApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/restaurantes/0/productos").status_code, 403)
         self.assertEqual(self.client.get(f"{BASE}/productos/0/receta").status_code, 422)
         self.assertEqual(self.client.get(f"{BASE}/productos/999/receta").status_code, 404)
-        self.assertEqual(self.client.delete(f"{BASE}/productos/1", headers=HEADERS).status_code, 405)
+        self.assertEqual(self.client.delete(f"{BASE}/productos/999", headers=HEADERS).status_code, 404)
 
 
 if __name__ == "__main__":

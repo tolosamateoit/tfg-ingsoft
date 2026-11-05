@@ -86,7 +86,7 @@ export default function Logistics({ restaurant, courier, view = 'deliveries', on
     </>}
     {courier && <OrderListing restaurant={null} refresh={refresh} onOpen={setSelected} onSessionExpired={onSessionExpired}/>}
     {selected !== null && <><button onClick={() => setSelected(null)}>Cerrar seguimiento #{selected}</button>
-      <DeliveryTracking key={selected + ':' + refresh + ':' + rows.find((row) => row.id_pedido === selected)?.estado} order={selected} manage={!courier} onUpdated={() => setRefresh((n) => n + 1)} onSessionExpired={onSessionExpired} /></>}
+      <DeliveryTracking key={selected + ':' + refresh + ':' + rows.find((row) => row.id_pedido === selected)?.estado} order={selected} manage={courier} onUpdated={() => setRefresh((n) => n + 1)} onSessionExpired={onSessionExpired} /></>}
     </>}
     {view === 'priorities' && error && <p role="alert" className="auth-error">{error}</p>}
   </section>;

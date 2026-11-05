@@ -14,7 +14,7 @@ type CardProps = { row: OperatingOrder; couriers: Courier[]; busy: boolean;
   onReject: (row: OperatingOrder) => void; onAssign: (row: OperatingOrder, courier: number, distance?: string) => void;
   onDelivery: (row: OperatingOrder, state: string) => void; onDistance: (row: OperatingOrder, distance: string) => void };
 
-export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, onState, onReject, onAssign, onDelivery, onDistance }: CardProps) {
+export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, onState, onReject, onAssign, onDistance }: CardProps) {
   const [courier, setCourier] = useState('');
   const [distance, setDistance] = useState('');
   const validCourier = couriers.some((c) => c.id_repartidor === Number(courier));
@@ -39,9 +39,6 @@ export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, on
       {row.estado === 'Nuevo' && <><button className="primary-button" disabled={busy} onClick={() => onState(row, 'En preparación')}>Confirmar pedido</button>
         <button className="order-reject" disabled={busy} onClick={() => onReject(row)}>Rechazar</button></>}
       {row.estado === 'En preparación' && <button className="primary-button" disabled={busy} onClick={() => onState(row, 'Listo')}>Marcar como listo</button>}
-      {row.estado === 'Asignado' && <button disabled={busy} onClick={() => onDelivery(row, 'En camino')}>Iniciar entrega</button>}
-      {row.estado === 'En camino' && <><button className="primary-button" disabled={busy} onClick={() => onDelivery(row, 'Entregado')}>Finalizar entrega</button>
-        <button disabled={busy} onClick={() => onDelivery(row, 'No entregado')}>Marcar no entregada</button></>}
       <button className="daily-order-detail" onClick={() => onOpen(row.id_pedido)}>Ver detalle</button>
     </div>
     {row.estado === 'Listo' && <form className="daily-order-dispatch" onSubmit={(event) => {

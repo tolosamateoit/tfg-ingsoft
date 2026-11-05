@@ -184,7 +184,7 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
         <p className="muted">Estimación operativa con tarifas vigentes; no es una liquidación contable.</p>
         {detail.economia.costo_entrega_asignado && <p>Costo de reparto guardado al asignar: {formatMoney(detail.economia.costo_entrega_asignado)}</p>}
       </section>}</article>}
-      {detailTab === 'seguimiento' && <DeliveryTracking key={`tracking-${detail.id_pedido}`} order={detail.id_pedido} manage={restaurant !== null}
+      {detailTab === 'seguimiento' && <DeliveryTracking key={`tracking-${detail.id_pedido}`} order={detail.id_pedido} manage={false}
         onUpdated={() => { setRefresh((n) => n + 1); void ensureApiQuery(`pedidos/${detail.id_pedido}`, (signal) => orderRequest<Order>(`pedidos/${detail.id_pedido}`, undefined, signal)).then(setDetail).catch(failed); }} onSessionExpired={onSessionExpired} />}
       {detailTab === 'preparacion' && restaurant !== null && <Preparation key={detail.id_pedido} restaurant={restaurant} order={detail.id_pedido}
         onSessionExpired={onSessionExpired} onChanged={() => {

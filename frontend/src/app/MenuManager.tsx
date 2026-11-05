@@ -1,4 +1,5 @@
 import { apiKey, cacheScope, queryClient, ensureApiQuery } from '../services/queryCache';
+import { operationRequest } from '../services/operations';
 import { useApiQuery } from '../services/useApiQuery';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Dialog, FoodPhoto, Icon } from './ui';
@@ -7,15 +8,15 @@ import {
   saveRecipe, updateProduct, type Ingredient, type Product, type ProductInput, type RecipeItem,
 } from '../services/menu';
 
-type Props = { restaurant: number; onSessionExpired: () => void };
+type Props = { owner: boolean; restaurant: number; onSessionExpired: () => void };
 type Editor = { kind: 'product'; product?: Product } | { kind: 'recipe'; product: Product };
 
 function errorMessage(error: unknown) {
   return error instanceof MenuError ? error.message : 'No se pudo confirmar la operación. Comprobá la conexión y volvé a cargar los datos.';
 }
 
-function ProductForm({ product, busy, onSave, onCancel }: {
-  product?: Product; busy: boolean; onSave: (data: ProductInput) => void; onCancel: () => void;
+function ProductForm({ product, busy, owner, onSave, onCancel }: {
+  product?: Product; busy: boolean; owner: boolean; onSave: (data: ProductInput) => void; onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<ProductInput>({ nombre: product?.nombre ?? '', precio: product?.precio ?? '',
     costo_unitario: product?.costo_unitario ?? '0', activo: product?.activo ?? true,
@@ -39,7 +40,7 @@ function ProductForm({ product, busy, onSave, onCancel }: {
         <p className="muted">El costo se calcula con los insumos de la receta. Para envasados, registrá su equivalencia (por ejemplo, una botella por unidad).</p>
         <label htmlFor="product-description">Descripción (opcional)</label><textarea id="product-description" maxLength={1000} value={draft.descripcion ?? ''} onChange={(event) => setDraft({ ...draft, descripcion: event.target.value })}/>
         <label htmlFor="product-image">URL de imagen (opcional)</label><input id="product-image" maxLength={2000} value={draft.imagen_url ?? ''} placeholder="https://… o /images/…" onChange={(event) => setDraft({ ...draft, imagen_url: event.target.value })}/>
-        <label className="checkbox-label"><input type="checkbox" checked={draft.activo}
+        <label className="checkbox-label"><input type="checkbox" disabled={!owner} checked={draft.activo}
           onChange={(event) => setDraft({ ...draft, activo: event.target.checked })} />Activo en el menú</label>
         <div className="menu-actions">
           <button type="submit">{busy ? 'Guardando…' : 'Guardar producto'}</button>
@@ -50,8 +51,8 @@ function ProductForm({ product, busy, onSave, onCancel }: {
   );
 }
 
-function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExpired, onBusyChange }: {
-  restaurant: number; product: Product; ingredients: Ingredient[]; onCancel: () => void; onSessionExpired: () => void; onBusyChange: (busy: boolean) => void;
+function RecipeEditor({ restaurant, product, ingredients, readOnly, onCancel, onSessionExpired, onBusyChange }: {
+  restaurant: number; product: Product; ingredients: Ingredient[]; readOnly: boolean; onCancel: () => void; onSessionExpired: () => void; onBusyChange: (busy: boolean) => void;
 }) {
   const path = `restaurantes/${restaurant}/productos/${product.id_producto}/receta`;
   const cached = queryClient.getQueryData<import('../services/menu').Recipe>(apiKey(path));
@@ -105,7 +106,7 @@ function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExp
       <h3>Receta de {product.nombre}</h3>
       <p>Indicá las cantidades necesarias para una unidad del producto, en la unidad registrada de cada insumo.</p>
       {loading ? <p role="status">Cargando receta…</p> : loaded && (
-        <fieldset disabled={busy}>
+        <fieldset disabled={busy || readOnly}>
           {ingredients.length === 0 && <p>Todavía no hay insumos registrados para este restaurante.</p>}
           {rows.length === 0 && <p>Esta receta no contiene insumos.</p>}
           {rows.map((row, index) => (
@@ -142,8 +143,9 @@ function RecipeEditor({ restaurant, product, ingredients, onCancel, onSessionExp
   );
 }
 
-export default function MenuManager({ restaurant, onSessionExpired }: Props) {
+export default function MenuManager({ owner, restaurant, onSessionExpired }: Props) {
   const [busy, setBusy] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -168,6 +170,14 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
     } finally { setBusy(false); }
   }
 
+  async function remove(product: Product) {
+    if (!window.confirm(`¿Eliminar ${product.nombre} del menú?`)) return;
+    setBusy(true); setError('');
+    try { await operationRequest(`restaurantes/${restaurant}/productos/${product.id_producto}`, undefined, undefined, 'DELETE'); await reload(); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : 'No se pudo retirar el producto.'); }
+    finally { setBusy(false); }
+  }
+
   return (
     <section className="menu-manager" aria-labelledby="menu-title">
       <div className="menu-heading"><div><h2 id="menu-title">Tu carta</h2><p>Productos que salen de tu cocina. Imágenes ilustrativas.</p></div>
@@ -180,14 +190,16 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
       {(error || queryError) && !editor && <p className="auth-error" role="alert">{error || queryError}</p>}
       {notice && <p className="menu-notice" role="status">{notice}</p>}
       {!loading && !error && products.length === 0 && <p>Todavía no hay productos. Creá el primero para comenzar.</p>}
+      {owner && <label><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}/> Mostrar productos retirados</label>}
       <div className="catalog-grid">
-        {products.map((product) => <article className="product-card catalog-product" key={product.id_producto}>
+        {products.filter((product) => product.activo || showInactive).map((product) => <article className="product-card catalog-product" key={product.id_producto}>
           <FoodPhoto name={product.nombre} src={product.imagen_url}/>
           {product.descripcion && <p>{product.descripcion}</p>}
-          <div className="product-title"><h3>{product.nombre}</h3><span className={`product-state ${!product.activo ? '' : product.disponible_stock ? 'product-state--active' : 'product-state--unavailable'}`}>{!product.activo ? 'Inactivo' : product.disponible_stock ? 'Activo' : 'No disponible'}</span></div>
+          <div className="product-title"><h3>{product.nombre}</h3>{product.activo && !product.disponible_stock ? <details className="shortage-info"><summary className="product-state product-state--unavailable">No disponible</summary><small>{product.insumos_faltantes?.length ? `Faltan insumos: ${product.insumos_faltantes.join(', ')}.` : 'El producto no tiene una receta completa.'}</small></details> : <span className={`product-state ${product.activo ? 'product-state--active' : ''}`}>{product.activo ? 'Activo' : 'Inactivo'}</span>}</div>
           <dl><dt>Precio de venta</dt><dd>{formatMoney(product.precio)}</dd><dt>Costo unitario</dt><dd>{formatMoney(product.costo_unitario)}</dd></dl>
           <div className="menu-actions">
             <button type="button" disabled={editor !== null || loading} aria-label={`Editar ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product', product }); }}>Editar</button>
+            {owner && product.activo && <button disabled={busy} onClick={() => void remove(product)}>Eliminar del menú</button>}
             <button type="button" disabled={editor !== null || loading} aria-label={`Receta de ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'recipe', product }); }}>Receta</button>
           </div>
         </article>)}
@@ -195,9 +207,9 @@ export default function MenuManager({ restaurant, onSessionExpired }: Props) {
       {editor && <Dialog title={editor.kind === 'product' ? (editor.product ? 'Editar producto' : 'Nuevo producto') : `Receta de ${editor.product.nombre}`} busy={busy} onClose={() => { setEditor(null); setError(''); }}>
         {error && <p className="auth-error" role="alert">{error}</p>}
         {editor.kind === 'product'
-          ? <ProductForm key={editor.product?.id_producto ?? 'new'} product={editor.product} busy={busy}
+          ? <ProductForm owner={owner} key={editor.product?.id_producto ?? 'new'} product={editor.product} busy={busy}
             onSave={(data) => void saveProduct(data)} onCancel={() => { setEditor(null); setError(''); }} />
-          : <RecipeEditor key={editor.product.id_producto} restaurant={restaurant} product={editor.product} ingredients={ingredients}
+          : <RecipeEditor readOnly={!owner} key={editor.product.id_producto} restaurant={restaurant} product={editor.product} ingredients={ingredients}
             onCancel={() => setEditor(null)} onSessionExpired={onSessionExpired} onBusyChange={setBusy} />}
       </Dialog>}
     </section>
