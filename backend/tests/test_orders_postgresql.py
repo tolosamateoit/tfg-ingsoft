@@ -55,8 +55,10 @@ class OrderReadPostgreSQLTests(test_orders.OrderReadTests):
 
     def test_concurrent_closure_or_courier_change_is_rechecked_before_confirmation(self):
         self.sign_in(1)
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql("INSERT INTO receta_detalle (id_producto, id_insumo, cantidad, unidad) VALUES (1, 1, 0.2, 'kg')")
         for mutation in ("UPDATE restaurante SET abierto=false WHERE id_restaurante=1",
-                         "UPDATE repartidor SET estado_disponibilidad='Ocupado' WHERE id_repartidor IN (1,3)"):
+                         "UPDATE repartidor SET estado_disponibilidad='No disponible' WHERE id_repartidor IN (1,3)"):
             with self.subTest(mutation=mutation):
                 started, finished = threading.Event(), threading.Event()
                 with self.engine.connect() as first:
@@ -79,7 +81,10 @@ class OrderReadPostgreSQLTests(test_orders.OrderReadTests):
                         blocked = not finished.wait(0.2)
                         first.commit()
                         response = result.result(timeout=8)
-                    self.assertTrue(blocked, "La confirmación debe esperar al cambio de disponibilidad concurrente.")
-                    self.assertEqual(response.status_code, 409, response.text)
+                    if mutation.startswith('UPDATE restaurante'):
+                        self.assertTrue(blocked, "La creación debe esperar al cierre concurrente.")
+                        self.assertEqual(response.status_code, 409, response.text)
+                    else:
+                        self.assertEqual(response.status_code, 201, response.text)
         with self.engine.connect() as connection:
-            self.assertEqual(connection.exec_driver_sql("SELECT count(*) FROM pedido").scalar_one(), 3)
+            self.assertEqual(connection.exec_driver_sql("SELECT count(*) FROM pedido").scalar_one(), 4)

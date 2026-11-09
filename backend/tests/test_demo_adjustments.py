@@ -7,7 +7,6 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import Entrega, HistorialPedido, Insumo, Pedido, Producto, RecetaDetalle, Repartidor, Usuario
-from app.demo_history.simulation import advance
 from app.logistics.service import assign_ready_orders
 from tests import test_completion, test_orders_postgresql
 from tests.auth_support import HEADERS
@@ -137,34 +136,12 @@ class DemoAdjustmentsTests(unittest.TestCase):
         self.assertEqual(self.client.delete(BASE + '/productos/1', headers=HEADERS).status_code, 403)
         self.assertEqual(self.client.delete(BASE + '/insumos/1', headers=HEADERS).status_code, 403)
 
-    def test_simulation_delay_adds_ten_to_each_random_draw(self):
-        from unittest.mock import patch
-        from app.demo_history.simulation import delay
-        with patch('app.demo_history.simulation.randint', side_effect=[15, 25]):
-            self.assertEqual(delay(1, 'Nuevo'), 25)
-            self.assertEqual(delay(1, 'Listo'), 35)
-
     def test_recipe_cannot_overcommit_pending_orders(self):
         self.sign_in(7)
         response = self.put(BASE + '/productos/1/receta', {'detalles':[{'id_insumo':1, 'cantidad':'6', 'unidad':'kg'}]})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(self.client.get(BASE + '/productos/1/receta').json()['detalles'][0]['cantidad'], '1.000000')
 
-    def test_simulation_respects_manual_state_change_and_ready_grace(self):
-        with Session(self.engine, expire_on_commit=False) as db:
-            db.execute(delete(Entrega).where(Entrega.id_pedido == 1))
-            db.get(Pedido, 1).estado = 'Listo'
-            second = add_order(db, estado='Listo')
-            db.add_all([HistorialPedido(id_pedido=oid, id_usuario=1, tipo_evento='registro', estado='Nuevo', detalle='[demo_simulacion]')
-                        for oid in (1, second.id_pedido)])
-            db.commit()
-            self.assertEqual(advance(db, 1, expected_state='En preparación'), 'Listo')
-            self.assertIsNone(db.scalar(select(Entrega).where(Entrega.id_pedido == 1)))
-            actor = db.get(Usuario, 7)
-            result = assign_ready_orders(db, actor, 1, demo_only=True, eligible_order_ids=[1])
-            self.assertEqual([row.id_pedido for row in result.entregas], [1])
-            self.assertEqual(db.get(Pedido, second.id_pedido).estado, 'Listo')
-            self.assertEqual(db.get(Repartidor, result.entregas[0].id_repartidor).estado_disponibilidad, 'Ocupado')
 
 
 @unittest.skipUnless(os.environ.get('TFG_TEST_POSTGRES_DSN'), 'Requiere PostgreSQL local descartable')

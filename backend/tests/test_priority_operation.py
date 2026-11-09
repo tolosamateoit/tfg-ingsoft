@@ -134,7 +134,7 @@ class PriorityOperationTests(unittest.TestCase):
         self.assertEqual(response.json()['distancia_km'], '2.00')
         row = next(r for r in self.ranking()['pedidos'] if r['id_pedido'] == oid)
         self.assertEqual(Decimal(row['factores_prioridad']['D']), 8)
-        for value in ('5.001', '-1', 'NaN'):
+        for value in ('10.001', '-1', 'NaN'):
             self.assertEqual(self.client.put(f'{BASE}/pedidos/{oid}/distancia', headers=HEADERS, json={'distancia_km': value}).status_code, 422)
         with patch('app.logistics.service.calculate') as calculate:
             same = self.client.put(f'{BASE}/pedidos/{oid}/distancia', headers=HEADERS, json={'distancia_km': '2'})
@@ -153,7 +153,7 @@ class PriorityOperationTests(unittest.TestCase):
         self.assertEqual(assignment.json()['entregas'][0]['id_pedido'], oid)
 
     def test_legacy_unverified_distances_are_not_invented(self):
-        for value, status in [('5.001', 422), ('2.375', 201), ('0', 201)]:
+        for value, status in [('10.001', 422), ('2.375', 201), ('0', 201)]:
             response = self.client.post(BASE + '/pedidos', headers=HEADERS, json={**ORDER, 'distancia_km': value})
             self.assertEqual(response.status_code, status, response.text)
         self.sign_in(3)
@@ -176,7 +176,7 @@ class PriorityOperationTests(unittest.TestCase):
             active = add_order(db, estado='Asignado')
             db.add(Entrega(id_pedido=active.id_pedido, id_repartidor=1, fecha_asignacion=NOW, estado='Asignado', costo_repartidor=0))
             db.get(Pedido, 1).estado = 'Listo'
-            outside = add_order(db, distancia_km=Decimal('5.001'))
+            outside = add_order(db, distancia_km=Decimal('10.001'))
             outside_id = outside.id_pedido
             db.commit()
         self.assertEqual(self.client.put(BASE + '/repartidores/1', headers=HEADERS, json={'estado_disponibilidad':'Disponible'}).status_code, 403)
@@ -190,8 +190,10 @@ class PriorityOperationTests(unittest.TestCase):
     def test_roles_and_tenant_scopes_keep_everyday_staff_operations(self):
         for path in ('/prioridades', '/productos', '/productos/1/receta', '/insumos', '/stock', '/repartidores'):
             self.assertEqual(self.client.get(BASE + path).status_code, 200, path)
-        for path in ('/tarifas', '/predicciones/diaria', '/indicadores', '/alertas'):
+        for path in ('/tarifas',):
             self.assertEqual(self.client.get(BASE + path).status_code, 403, path)
+        for path in ('/predicciones/diaria', '/indicadores', '/alertas'):
+            self.assertEqual(self.client.get(BASE + path).status_code, 200, path)
         self.assertEqual(self.client.post(BASE + '/repartidores', headers=HEADERS, json={}).status_code, 403)
         self.assertEqual(self.client.put(BASE + '/tarifas', headers=HEADERS, json={'costo_fijo_entrega':1,'costo_por_km':2}).status_code, 403)
         self.assertEqual(self.client.get('/api/restaurantes/2/prioridades').status_code, 403)

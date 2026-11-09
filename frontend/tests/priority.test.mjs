@@ -59,7 +59,7 @@ test('desglose usa la distancia registrada sin pedir confirmacion', () => {
   const html = render();
   for (const factor of data.pedidos[0].factores) assert.ok(html.includes(`width:${factor.barra}%`));
   assert.match(html, /<details class="priority-breakdown">/);
-  assert.match(html, /max="5"/);
+  assert.match(html, /max="10"/);
   assert.doesNotMatch(html, /Confirmá la distancia|Distancia sin confirmar|Sin confirmar/);
   assert.match(html, /Distancia no disponible/);
   assert.match(html, /4,00 km registrados/);

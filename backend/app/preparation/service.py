@@ -115,6 +115,14 @@ def change_preparation(db: Session, user: Usuario, restaurant_id: int, order_id:
                  or order.estado == "En preparación" and data.estado == "Listo")
     if not valid:
         raise HTTPException(409, "Transición no permitida. Para repetir el consumo usá Nueva preparación explícita.")
+    if order.estado == 'Nuevo' and data.estado == 'En preparación':
+        from app.db.models import Restaurante
+        from app.orders.service import courier_available
+        restaurant = db.scalar(select(Restaurante).where(Restaurante.id_restaurante == restaurant_id).with_for_update(read=True))
+        if not restaurant or not restaurant.abierto:
+            raise HTTPException(409, 'El restaurante está cerrado y no puede confirmar pedidos.')
+        if not db.scalar(select(courier_available(restaurant_id))):
+            raise HTTPException(409, 'No hay repartidores disponibles para confirmar el pedido.')
     ingredients, amounts = consumption(db, restaurant_id, order_id,
         exclude_order_id=order_id if order.estado == 'Nuevo' else None) if data.estado == "En preparación" else ([], {})
     try:

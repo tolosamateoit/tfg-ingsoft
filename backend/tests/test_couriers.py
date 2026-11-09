@@ -72,7 +72,7 @@ class CourierTests(unittest.TestCase):
         self.sign_in(1)
         self.assertFalse(self.client.get(BASE).json()["delivery_disponible"])
         response = self.client.post("/api/restaurantes/1/pedidos", headers=HEADERS, json=ORDER)
-        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.status_code, 201, response.text)
         self.sign_in(5)
         own = self.client.get("/api/repartidores/me")
         self.assertEqual([row["id_repartidor"] for row in own.json()["repartidores"]], [1])
@@ -103,7 +103,7 @@ class CourierTests(unittest.TestCase):
         self.assertEqual(self.client.put("/api/repartidores/me", headers=HEADERS,
                                        json={"estado_disponibilidad": "Disponible", "id_repartidor": 3}).status_code, 422)
         self.sign_in(7)
-        self.assertEqual(self.update(estado="Ocupado").status_code, 403)
+        self.assertEqual(self.update(estado="Ocupado").status_code, 422)
 
     def test_inactive_account_cannot_be_made_available(self):
         with Session(self.engine) as db:

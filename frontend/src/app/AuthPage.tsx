@@ -9,6 +9,8 @@ import Couriers from './Couriers';
 import Logistics from './Logistics';
 import Analytics from './Analytics';
 import AccountSupport from './AccountSupport';
+import WorkStatus from './WorkStatus';
+import Staff from './Staff';
 import { Icon, FoodPhoto } from './ui';
 import { canonicalPath, newOrder, pagesFor, roleLabels } from './navigation';
 
@@ -79,7 +81,7 @@ export default function AuthPage() {
           <button type="button" className="icon-button" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}><Icon name={showPassword ? 'eyeOff' : 'eye'}/></button></div>
         <button className="primary-button login-submit" disabled={busy}>{busy ? 'Ingresando…' : 'Ingresar a mi espacio'}<Icon name="arrow"/></button>
       </form>{error && <p className="auth-error" role="alert">{error}</p>}
-      {import.meta.env.DEV && __LOCAL_ACCOUNT_ACCESS__ && <div className="quick-access"><div className="divider-label"><span>Acceso por perfil</span></div><div className="quick-access-grid">
+      {import.meta.env.DEV && __LOCAL_ACCOUNT_ACCESS__ && <div className="quick-access"><div className="divider-label"><span>Acceso rápido</span></div><div className="quick-access-grid">
         {[['propietario','Propietario','grid'],['personal','Personal','food'],['repartidor','Repartidor 1','truck'],['repartidor_2','Repartidor 2','truck'],['repartidor_3','Repartidor 3','truck'],['cliente','Cliente','people']].map(([role,label,icon]) => <button key={role} disabled={busy} onClick={() => void quickAccess(role)}><Icon name={icon} size={22}/><span>{label}</span></button>)}
       </div></div>}<p className="login-security"><Icon name="check" size={16}/>Acceso protegido para tu equipo</p>
     </div><footer>Todo listo para un buen servicio.</footer></main>
@@ -89,6 +91,7 @@ export default function AuthPage() {
     {mobileMenu && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)}/>}
     <aside className={`sidebar${mobileMenu ? ' sidebar--open' : ''}`}><a href={`#/${pages[0].path}`} className="app-brand" aria-label="Oliva, inicio">{brand}</a>
       <div className="workspace-pill"><span className="workspace-avatar"><Icon name="food"/></span><div><strong>{user.id_restaurante ? (user.restaurante ?? 'Mi restaurante') : user.rol === 'cliente' ? 'Mi espacio' : 'Oliva'}</strong><small>{roleLabels[user.rol]}</small></div></div>
+      {user.id_restaurante !== null && ['propietario', 'repartidor'].includes(user.rol) && <WorkStatus restaurant={user.id_restaurante} courier={user.rol === 'repartidor'} onSessionExpired={sessionExpired}/>}
       <nav aria-label="Navegación principal">{pages.map((page, index) => <div key={page.path}>{(index === 0 || pages[index-1].group !== page.group) && <p className="nav-group">{page.group}</p>}
         <a href={`#/${page.path}`} className={`nav-link${current.path === page.path ? ' nav-link--active' : ''}`} aria-current={current.path === page.path ? 'page' : undefined}><Icon name={page.icon}/>{page.label}{current.path === page.path && <span className="nav-active-dot"/>}</a>
       </div>)}</nav>
@@ -104,6 +107,7 @@ export default function AuthPage() {
             {current.path === 'stock' && <Inventory owner={user.rol === 'propietario'} restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
             {(current.path === 'pedidos' || current.path === 'nuevo-pedido') && <Orders restaurant={user.id_restaurante} view={current.path === 'nuevo-pedido' ? 'create' : 'list'} onSessionExpired={sessionExpired}/>}
             {current.path === 'repartidores' && <Couriers restaurant={user.id_restaurante} owner={user.rol === 'propietario'} onSessionExpired={sessionExpired}/>}
+            {current.path === 'personal' && user.rol === 'propietario' && <Staff restaurant={user.id_restaurante} onSessionExpired={sessionExpired}/>}
             {current.path === 'entregas' && <Logistics restaurant={user.id_restaurante} courier={false} view="deliveries" onSessionExpired={sessionExpired}/>}
             {current.path === 'demanda' && <Analytics restaurant={user.id_restaurante} view="forecast" onSessionExpired={sessionExpired}/>}
             {current.path === 'indicadores' && <Analytics restaurant={user.id_restaurante} view="metrics" onSessionExpired={sessionExpired}/>}

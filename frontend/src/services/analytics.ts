@@ -12,7 +12,8 @@ export type DayForecast = {
   estado: string; fecha_operativa: string | null; fecha_seleccionada: string | null;
   fechas_disponibles: { fecha: string; etiqueta: string }[];
   pedidos_estimados: number | null; cantidad_faltantes: number; compras_completas: boolean;
-  productos: { id_producto: number; nombre: string; cantidad: number; estimacion_original: string }[];
+  productos: { id_producto: number; nombre: string; cantidad: number; estimacion_original: string;
+    historial_ventas: { fecha: string; unidades: number }[] }[];
   insumos: Forecast['insumos']; explicaciones: string[]; aviso: string | null;
 };
 export type Alert = { id_alerta: number; tipo: string; descripcion: string; valor_observado: string; valor_referencia: string; fecha_hora: string; estado: string; severidad: 'critica' | 'advertencia' };
@@ -23,7 +24,7 @@ export type OperationalDashboard = {
   entregas_demoradas: number; entregas_sin_referencia: number;
   productos: { id_producto: number; nombre: string; cantidad: number }[];
   evolucion: { fecha: string; pedidos: number; ventas: string; proporcion: number }[];
-  alertas: { clave: string; tipo: 'importe' | 'entrega' | 'stock'; mensaje: string;
+  alertas: { clave: string; tipo: 'importe' | 'entrega' | 'stock' | 'demanda'; mensaje: string;
     id_pedido: number | null; id_entrega: number | null; fecha_pronostico: string | null }[];
   total_alertas: number; fecha_stock: string | null; aviso_stock: string | null;
 };

@@ -165,7 +165,7 @@ class DeliveryTests(unittest.TestCase):
     def test_tracking_ownership_delivery_transitions_and_courier_release(self):
         delivery = self.make_delivery()
         with Session(self.engine) as db:
-            db.get(Repartidor, 1).estado_disponibilidad = "Ocupado"
+            db.get(Repartidor, 1).estado_disponibilidad = "No disponible"
             db.commit()
         self.sign_in(3)
         self.assertEqual(self.client.get("/api/pedidos/1/seguimiento").status_code, 200)
@@ -183,9 +183,9 @@ class DeliveryTests(unittest.TestCase):
         with Session(self.engine) as db:
             self.assertEqual(db.get(Pedido, 1).estado, "Entregado")
             self.assertEqual(db.get(Entrega, delivery).estado, "Entregado")
-            self.assertEqual(db.get(Repartidor, 1).estado_disponibilidad, "Disponible")
+            self.assertEqual(db.get(Repartidor, 1).estado_disponibilidad, "No disponible")
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido)), 2)
-            self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 1)
+            self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 0)
 
     def test_staff_cannot_manage_delivery_and_distances_lock_after_assignment(self):
         delivery = self.make_delivery()
@@ -255,7 +255,7 @@ class AssignmentTests(unittest.TestCase):
             self.assertEqual(db.get(Pedido, 1).importe_total, Decimal("100"))
             self.assertEqual(db.get(Pedido, 1).costo_total, Decimal("10"))
             self.assertEqual(db.get(Pedido, 2).estado, "Nuevo")
-            self.assertEqual(db.get(Repartidor, 1).estado_disponibilidad, "Ocupado")
+            self.assertEqual(db.get(Repartidor, 1).estado_disponibilidad, "No disponible")
             self.assertEqual(db.scalar(select(func.count()).select_from(Entrega)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 2)
@@ -300,7 +300,7 @@ class AssignmentTests(unittest.TestCase):
                          ["En preparación", "Listo", "Asignado", "En camino", "Entregado"])
         with Session(self.engine) as db:
             self.assertEqual(db.get(Insumo, 1).stock_actual, Decimal("19.8"))
-            self.assertEqual(db.get(Repartidor, 1).estado_disponibilidad, "Disponible")
+            self.assertEqual(db.get(Repartidor, 1).estado_disponibilidad, "No disponible")
 
     def test_assignment_failure_rolls_back_delivery_history_order_and_availability(self):
         with Session(self.engine) as db:

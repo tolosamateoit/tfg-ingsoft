@@ -20,7 +20,7 @@ class OrderInput(BaseModel):
     referencia_local: str | None = Field(default=None, max_length=500)
     zona_entrega: str | None = Field(default=None, max_length=150)
     medio_pago: str = Field(min_length=1, max_length=50)
-    distancia_km: Annotated[Decimal, Field(ge=0, le=5, max_digits=12, decimal_places=3, allow_inf_nan=False)]
+    distancia_km: Annotated[Decimal, Field(ge=0, le=10, max_digits=12, decimal_places=3, allow_inf_nan=False)]
     detalles: list[OrderItemInput] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")

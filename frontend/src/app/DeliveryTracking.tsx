@@ -42,7 +42,7 @@ export default function DeliveryTracking({ order, manage = false, onUpdated, onS
         {data.entrega.estado === 'En camino' && <><button disabled={busy} onClick={() => void change('Entregado')}>Marcar entregada</button>
           <button disabled={busy} onClick={() => void change('No entregado')}>Marcar no entregada</button></>}
       </div>}
-      <h4>Historial</h4><ul className="timeline">{data.historial.map((event) => <li key={event.id_historial}>{formatDateTime(event.fecha_hora)} · {displayText(event.usuario)} · {event.estado}</li>)}</ul>
+      <h4>Historial</h4><ul className="timeline">{data.historial.map((event) => <li key={event.id_historial}>{formatDateTime(event.fecha_hora)} · {event.usuario && <>{displayText(event.usuario)} · </>}{event.estado}</li>)}</ul>
     </>}
   </section>;
 }

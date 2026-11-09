@@ -122,7 +122,7 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
         <label htmlFor="order-reference">Referencia (opcional)</label><input id="order-reference" maxLength={500} value={form.referencia_local} onChange={(e) => setForm({ ...form, referencia_local: e.target.value })} />
         <label htmlFor="order-zone">Zona (opcional)</label><input id="order-zone" maxLength={150} value={form.zona_entrega} onChange={(e) => setForm({ ...form, zona_entrega: e.target.value })} />
         <label htmlFor="order-distance">Distancia de entrega (km)</label>
-        <input id="order-distance" type="number" min="0" max="5" step="0.001" required value={form.distancia_km ?? ''}
+        <input id="order-distance" type="number" min="0" max="10" step="0.001" required value={form.distancia_km ?? ''}
           onChange={(e) => setForm({ ...form, distancia_km: e.target.value || undefined })}/>
         <label htmlFor="order-payment">Medio de pago</label><input id="order-payment" required maxLength={50} value={form.medio_pago} onChange={(e) => setForm({ ...form, medio_pago: e.target.value })} />
         <h4>Productos activos</h4>
@@ -154,11 +154,11 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
           <label htmlFor="customer-reference">Referencia (opcional)</label><input id="customer-reference" maxLength={500} value={form.referencia_local} onChange={(e) => setForm({ ...form, referencia_local: e.target.value })}/>
           <label htmlFor="customer-payment">Medio de pago</label><select id="customer-payment" value={form.medio_pago} onChange={(e) => setForm({ ...form, medio_pago: e.target.value })}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select>
           <label htmlFor="customer-distance">Distancia de entrega (km)</label>
-          <input id="customer-distance" type="number" min="0" max="5" step="0.001" required value={form.distancia_km ?? ''}
+          <input id="customer-distance" type="number" min="0" max="10" step="0.001" required value={form.distancia_km ?? ''}
             onChange={(e) => setForm({ ...form, distancia_km: e.target.value || undefined })}/>
-          <p className="muted">La cobertura de entrega es de hasta 5 km.</p>
+          <p className="muted">La cobertura de entrega es de hasta 10 km.</p>
           <button className="primary-button" type="submit" disabled={!menu.restaurante.delivery_disponible || !menu.productos.some((p) => Number(quantities[p.id_producto] ?? 0) > 0)}>{busy ? 'Confirmando…' : 'Confirmar pedido'}</button>
-          {!menu.restaurante.delivery_disponible && <p>Podés explorar el menú. Para confirmar, el restaurante debe estar abierto y tener repartidores disponibles.</p>}
+          {!menu.restaurante.delivery_disponible && <p>Podés explorar el menú. El restaurante está cerrado y no recibe pedidos.</p>}
         </fieldset></form></>}
     </div> : null}
     {view === 'list' && <OrderListing key={restaurant ?? 'cliente'} restaurant={restaurant} refresh={refresh}

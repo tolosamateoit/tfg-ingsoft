@@ -24,7 +24,7 @@ export function PriorityDetails({ page, busy = false, onDistance, onOpen }: Deta
           <p className="priority-products">{row.resumen_productos || 'Sin productos registrados'}</p>
           <p className="priority-reason">{row.explicacion}</p>
           {row.repartidor && <p className="priority-courier">Repartidor: {row.repartidor}</p>}
-          {row.distancia_km !== null && Number(row.distancia_km) > 5 && <p className="priority-distance-note">La distancia registrada supera la cobertura de 5 km.</p>}
+          {row.distancia_km !== null && Number(row.distancia_km) > 10 && <p className="priority-distance-note">La distancia registrada supera la cobertura de 10 km.</p>}
           <div className="priority-actions"><button type="button" onClick={() => onOpen?.(row.id_pedido)}>Ver pedido</button>
           <details className="priority-breakdown"><summary>Por qué está en esta posición</summary>
             <div className="priority-factors">{row.factores.map((factor) => <div className="priority-factor" key={factor.codigo}>
@@ -37,9 +37,9 @@ export function PriorityDetails({ page, busy = false, onDistance, onOpen }: Deta
             {['Nuevo', 'En preparación', 'Listo'].includes(row.estado) && <form className="priority-distance-form" onSubmit={(event) => {
               event.preventDefault(); const value = new FormData(event.currentTarget).get('distancia_km');
               if (typeof value === 'string') onDistance?.(row.id_pedido, value);
-            }}><label htmlFor={`priority-distance-${row.id_pedido}`}>Modificar distancia de entrega (hasta 5 km)</label>
+            }}><label htmlFor={`priority-distance-${row.id_pedido}`}>Modificar distancia de entrega (hasta 10 km)</label>
               <div><input id={`priority-distance-${row.id_pedido}`} name="distancia_km" key={`${row.id_pedido}:${row.distancia_km}`}
-                type="number" min="0" max="5" step="0.001" required disabled={busy}
+                type="number" min="0" max="10" step="0.001" required disabled={busy}
                 defaultValue={row.distancia_km ?? ''} placeholder="Distancia en km"/>
                 <button disabled={busy}>Guardar distancia</button></div>
             </form>}

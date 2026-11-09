@@ -42,8 +42,14 @@ export function ForecastDetails({ forecast, onSelect, busy = false, selectedDate
         <section className="forecast-section" aria-labelledby="forecast-products-title">
           <h3 id="forecast-products-title">Productos que conviene preparar</h3>
           <div className="forecast-products">{forecast.productos.filter((row) => row.cantidad > 0).map((row) =>
-            <article className="forecast-product" key={row.id_producto}><h4>{row.nombre}</h4>
-              <p><strong>{row.cantidad}</strong><span>unidades</span></p></article>)}</div>
+            <article className="forecast-product" key={`${forecast.fecha_seleccionada}-${row.id_producto}`}><h4>{row.nombre}</h4>
+              <p><strong>{row.cantidad}</strong><span>unidades</span></p>
+              <details className="forecast-product-history"><summary aria-label={`Ver detalle de ventas de ${row.nombre}`}><span aria-hidden="true">⌄</span></summary>
+                <div><strong>Ventas utilizadas</strong><small>{row.historial_ventas.length} de 7 días operativos</small>
+                  <ul>{row.historial_ventas.map((day) => <li key={day.fecha}>{formatCalendarDate(day.fecha)}: {day.unidades} {day.unidades === 1 ? 'unidad' : 'unidades'}</li>)}</ul>
+                  <p>Promedio: {Number(row.estimacion_original).toLocaleString('es-AR', {maximumFractionDigits: 6})} unidades.</p>
+                  {Number(row.estimacion_original) !== row.cantidad && <p>Redondeado hacia arriba: {row.cantidad} unidades.</p>}
+                </div></details></article>)}</div>
           {forecast.productos.every((row) => row.cantidad === 0) && <p>No se prevén unidades para preparar este día.</p>}
         </section>
         <section className="forecast-section" aria-labelledby="forecast-shopping-title">

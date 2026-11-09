@@ -13,12 +13,13 @@ from statistics import median, quantiles
 
 from fastapi import HTTPException
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.service import as_utc
-from app.db.models import DetallePedido, Entrega, HistorialPedido, Pedido, Producto, Repartidor, Usuario
+from app.db.models import DetallePedido, DiaOperativo, Entrega, HistorialPedido, Pedido, Producto, Repartidor, Usuario
 from app.orders.operational_date import operational_date, operational_day_bounds, OPERATIONAL_ZONE
+from app.orders.operating_days import analysis_reference_date, operating_days
 
 
 class OperationalAlert(BaseModel):
@@ -236,7 +237,7 @@ def owner_order_warnings(db, user, order_ids, *, reference_day=None, target_orde
 def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected: date | None = None):
     if user.rol not in {'propietario', 'personal'} or user.id_restaurante != restaurant:
         raise HTTPException(403, 'No tenés permiso para consultar indicadores y alertas.')
-    day = operational_date(db, restaurant)
+    day = analysis_reference_date(db, restaurant)
     if day is None:
         return OperationalDashboard()
     target = selected or day
@@ -244,7 +245,9 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
         raise HTTPException(422, 'Elegí una fecha anterior o igual a la fecha operativa.')
     start, end = operational_day_bounds(target)
     orders, samples, amounts, delays, classified = operational_evidence(db, restaurant, end)
-    first = min((local_day(o.fecha_hora) for o in orders), default=day)
+    first_registered = db.scalar(select(func.min(DiaOperativo.fecha)).where(
+        DiaOperativo.id_restaurante == restaurant, DiaOperativo.fecha <= day))
+    first = min([local_day(o.fecha_hora) for o in orders] + ([first_registered] if first_registered else []) or [day])
     if target < first:
         raise HTTPException(422, 'La fecha elegida es anterior al historial disponible.')
     daily = [o for o in orders if start <= as_utc(o.fecha_hora) < end]
@@ -281,6 +284,22 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
     result.evolucion = list(trend.values())
     result.alertas = [amounts[o.id_pedido] for o in daily if o.id_pedido in amounts]
     result.alertas.extend(delays[r.order_id] for r in completed if r.order_id in delays)
+    # La misma referencia robusta de las alertas se aplica a conteos por día abierto.
+    open_days = operating_days(db, restaurant, target - timedelta(days=90), target)
+    if target in open_days:
+        daily_counts = defaultdict(int)
+        for order in orders:
+            daily_counts[local_day(order.fecha_hora)] += 1
+        previous = [Decimal(daily_counts[d]) for d in open_days if d < target]
+        reference = robust_reference(previous, 20)
+        if reference:
+            center, upper = reference
+            threshold = max(Decimal(0), center * 2 - upper)
+            observed = Decimal(len(daily))
+            if observed <= threshold and observed < center:
+                result.alertas.append(OperationalAlert(clave=f'demanda:{target}', tipo='demanda',
+                    observado=observed, habitual=center, umbral=threshold, antecedentes=len(previous),
+                    mensaje=f'Se registraron {len(daily)} pedidos en un día operativo; lo habitual es {quantity_text(center)}.'))
     # Mismo servicio, fecha, unidades enteras y recetas que Previsión de demanda.
     # El stock es actual: nunca se presenta como una reconstrucción de fechas pasadas.
     from app.analytics.forecast import day_forecast
@@ -294,7 +313,7 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
                 observado=row.faltante, habitual=row.stock_actual, fecha_pronostico=forecast.fecha_seleccionada,
                 mensaje=f'Podrían faltar {quantity_text(row.faltante)} {unit} de {row.nombre} para lo previsto el {day:%d/%m}. '
                         f'Compra sugerida: {quantity_text(row.reposicion_sugerida)} {unit}.'))
-    rank = {'stock': 0, 'entrega': 1, 'importe': 2}
+    rank = {'stock': 0, 'entrega': 1, 'importe': 2, 'demanda': 3}
     result.alertas.sort(key=lambda a: (rank[a.tipo], -(a.observado / a.habitual if a.habitual and a.habitual > 0 else a.observado), a.clave))
     result.total_alertas = len(result.alertas)
     result.alertas = result.alertas[:6]

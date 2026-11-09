@@ -14,7 +14,6 @@ from app.menu.service import save_recipe, update_product
 from app.menu.schemas import RecipeInput, ProductInput
 from app.menu.inventory import save_ingredient, IngredientInput, record_movement, MovementInput
 from app.orders.service import list_orders
-from app.demo_history.simulation import advance, delay, local_demo
 from tests import test_logistics, test_orders_postgresql
 
 
@@ -60,57 +59,8 @@ class FinalDemoTests(unittest.TestCase):
             self.assertTrue(all(r.id_restaurante == 1 for r in page.pedidos))
             self.assertEqual(list_orders(db, actor, 20, 0, 'historial', date(2000,1,1)).total, 0)
 
-    def test_simulation_manual_changes_and_payment_are_idempotent(self):
-        with Session(self.engine, expire_on_commit=False) as db:
-            self.assertEqual(advance(db, 1), 'En preparación')
-            self.assertEqual(advance(db, 1), 'Listo')
-            # Marcar como nuevo simulado; la asignación ignora los históricos.
-            db.add(HistorialPedido(id_pedido=1, id_usuario=1, tipo_evento='registro', estado='Nuevo', detalle='[demo_simulacion]'))
-            db.commit()
-            self.assertEqual(advance(db, 1), 'Asignado')
-            self.assertEqual(advance(db, 1), 'En camino')
-            self.assertEqual(advance(db, 1), 'Entregado')
-            count = db.scalar(select(func.count()).select_from(HistorialPedido))
-            self.assertIsNone(advance(db, 1))
-            self.assertEqual(db.get(Pedido, 1).estado_pago, 'pagado')
-            self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido)), count)
-            self.assertEqual(db.scalar(select(func.count()).select_from(Entrega)), 1)
 
-    def test_simulation_dispatch_does_not_touch_historical_ready_orders(self):
-        from app.logistics.service import assign_ready_orders
-        with Session(self.engine) as db:
-            db.get(Pedido, 1).estado = 'Listo'; db.commit()
-            result = assign_ready_orders(db, db.get(Usuario, 1), 1, demo_only=True)
-            self.assertEqual(result.entregas, [])
-            self.assertEqual(db.get(Pedido, 1).estado, 'Listo')
 
-    def test_local_scope_and_bounded_delays(self):
-        from app.auth.config import AuthSettings
-        with patch('app.demo_history.simulation.get_auth_settings', return_value=AuthSettings(frozenset(), True)):
-            self.assertFalse(local_demo())
-        for oid in range(100):
-            self.assertTrue(15 <= delay(oid, 'Nuevo') <= 25)
-
-    def test_worker_runs_without_browser_and_keeps_history_untouched(self):
-        if self.engine.dialect.name != 'postgresql':
-            self.skipTest('El lock del worker requiere PostgreSQL')
-        from app.demo_history.simulation import run_once
-        with Session(self.engine) as db:
-            db.add(HistorialPedido(id_pedido=1, id_usuario=1, tipo_evento='registro', estado='Nuevo', detalle='[demo_simulacion]'))
-            db.commit()
-        class Clock:
-            ticks = 0
-            def is_set(self): return self.ticks >= 80
-            def wait(self, seconds): self.ticks += seconds; return self.is_set()
-        clock = Clock()
-        with patch('app.demo_history.simulation.get_engine', return_value=self.engine), \
-             patch('app.demo_history.simulation.monotonic', side_effect=lambda: clock.ticks), \
-             patch('app.demo_history.simulation.delay', return_value=2):
-            run_once(clock)
-        with Session(self.engine) as db:
-            self.assertEqual(db.get(Pedido, 1).estado, 'Entregado')
-            self.assertEqual(db.get(Pedido, 1).estado_pago, 'pagado')
-            self.assertEqual(db.get(Pedido, 2).estado, 'Nuevo')
 
 
 @unittest.skipUnless(os.environ.get('TFG_TEST_POSTGRES_DSN'), 'Requiere PostgreSQL local descartable')

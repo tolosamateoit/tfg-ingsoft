@@ -47,7 +47,7 @@ export type OperatingOrder = OrderSummary & {
   version: number; distancia_km: string | null; direccion_entrega: string; referencia_local: string | null; prioridad: import('./logistics').Priority | null;
 };
 export type OperatingDay = {
-  fecha_operativa: string | null; actualizada_en: string;
+  fecha_operativa: string | null; actualizada_en: string; abierto: boolean;
   activos: OperatingOrder[]; listos: OperatingOrder[]; en_entrega: OperatingOrder[]; finalizados: OperatingOrder[];
   total_finalizados: number; limit: number; offset: number;
   repartidores: import('./operations').Courier[];

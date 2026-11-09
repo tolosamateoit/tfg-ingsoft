@@ -35,7 +35,7 @@ class PriorityPage(BaseModel):
 
 class DistanceInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    distancia_km: Annotated[Decimal, Field(ge=0, le=5, max_digits=12, decimal_places=3, allow_inf_nan=False)]
+    distancia_km: Annotated[Decimal, Field(ge=0, le=10, max_digits=12, decimal_places=3, allow_inf_nan=False)]
 
 
 class DeliveryStateInput(BaseModel):
@@ -61,7 +61,7 @@ class DeliveryOutput(BaseModel):
 class TrackingEvent(BaseModel):
     id_historial: int
     fecha_hora: datetime
-    usuario: str
+    usuario: str | None
     estado: str
     detalle: str | None
 
@@ -83,4 +83,4 @@ class AssignmentInput(BaseModel):
     id_pedido: int = Field(gt=0, strict=True)
     id_repartidor: int = Field(gt=0, strict=True)
     version: int = Field(ge=0, strict=True)
-    distancia_km: Annotated[Decimal, Field(ge=0, le=5, max_digits=12, decimal_places=3, allow_inf_nan=False)] | None = None
+    distancia_km: Annotated[Decimal, Field(ge=0, le=10, max_digits=12, decimal_places=3, allow_inf_nan=False)] | None = None

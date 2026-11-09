@@ -86,9 +86,11 @@ class DailyOperationTests(unittest.TestCase):
         self.assertEqual(row['id_repartidor'], 3)
         self.assertTrue(next(r for r in self.day()['repartidores'] if r['id_repartidor'] == 3)['entrega_activa'])
         path = f"/api/entregas/{row['id_entrega']}/estado"
+        self.sign_in(9)
         for state in ('En camino', 'Entregado', 'Entregado'):
             response = self.client.put(path, headers=HEADERS, json={'estado': state})
             self.assertEqual(response.status_code, 200, response.text)
+        self.sign_in(1)
         data = self.day()
         self.assertEqual(data['en_entrega'], [])
         self.assertEqual(data['finalizados'][0]['estado'], 'Entregado')

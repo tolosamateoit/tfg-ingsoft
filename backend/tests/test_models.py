@@ -21,6 +21,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 DER_COLUMNS = {
     "restaurante": "id_restaurante nombre direccion horario_atencion abierto costo_fijo_entrega costo_por_km",
+    "dia_operativo": "id_restaurante fecha",
     "usuario": "id_usuario id_restaurante correo nombre hash_contrasena telefono rol activo",
     "cliente": "id_cliente id_usuario nombre telefono direccion referencia_local zona_entrega",
     "producto": "id_producto id_restaurante nombre precio costo_unitario activo",
@@ -43,7 +44,7 @@ class ModelStructureTests(unittest.TestCase):
         self.assertEqual(set(Base.metadata.tables), set(DER_COLUMNS))
         for name, columns in DER_COLUMNS.items():
             with self.subTest(table=name):
-                approved = {"descripcion", "imagen_url"} if name == "producto" else set()
+                approved = {"descripcion", "imagen_url"} if name == "producto" else {"activo"} if name == "insumo" else set()
                 self.assertEqual(set(Base.metadata.tables[name].columns.keys()), set(columns.split()) | approved)
 
     def test_approved_product_presentation_attributes_are_optional(self):

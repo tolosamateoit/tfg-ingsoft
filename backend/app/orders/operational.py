@@ -30,6 +30,7 @@ class OperatingOrder(OrderSummary):
 
 class OperatingDay(BaseModel):
     fecha_operativa: date | None = None
+    abierto: bool = False
     actualizada_en: datetime
     activos: list[OperatingOrder] = []
     listos: list[OperatingOrder] = []
@@ -47,7 +48,9 @@ def operating_day(db, user, restaurant_id, limit=20, offset=0):
     day = operational_date(db, restaurant_id)
     now = engine.priority_time(db)
     result = OperatingDay(fecha_operativa=day, actualizada_en=now, limit=limit, offset=offset)
-    result.repartidores = list_couriers(db, user).repartidores
+    courier_page = list_couriers(db, user)
+    result.repartidores = courier_page.repartidores
+    result.abierto = courier_page.abierto
     if day is None:
         return result
     start, end = operational_day_bounds(day)

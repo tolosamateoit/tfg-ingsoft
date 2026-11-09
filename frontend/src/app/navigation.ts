@@ -10,12 +10,12 @@ export const newOrder: Page = { path: 'nuevo-pedido', label: 'Nuevo pedido', ico
 export const canonicalPath = (path: string) => ['resumen', 'prioridades'].includes(path) ? 'pedidos' : path;
 export function pagesFor(user: User): Page[] {
   if (['propietario', 'personal'].includes(user.rol) && user.id_restaurante !== null) return [...operations,
+    ...(user.rol === 'propietario' ? [{ path: 'personal', label: 'Personal', icon: 'people', group: 'Operación', description: 'Administrá las cuentas de tu equipo.' }] : []),
     { path: 'demanda', label: 'Previsión de demanda', icon: 'spark', group: 'Análisis', description: 'Anticipá las próximas ventas y las necesidades de tu cocina.' },
     { path: 'indicadores', label: 'Indicadores y alertas', icon: 'chart', group: 'Análisis', description: 'Datos que te ayudan a tomar mejores decisiones.' },
   ];
   if (user.rol === 'repartidor') return [
     { path: 'pedidos-reparto', label: 'Mis pedidos', icon: 'orders', group: 'Mi trabajo', description: 'Pedidos asignados y su historial.' },
-    { path: 'disponibilidad', label: 'Mi disponibilidad', icon: 'clock', group: 'Mi trabajo', description: 'Mantené al equipo informado de tu disponibilidad.' },
   ];
   if (user.rol === 'cliente') return [
     { path: 'menu', label: 'Explorar menú', icon: 'food', group: 'Mi cuenta', description: 'Encontrá tu próximo plato favorito.' },

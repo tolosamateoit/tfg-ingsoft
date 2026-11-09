@@ -37,14 +37,8 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
                            .with_for_update(read=True))
     if restaurant is None or not restaurant.abierto:
         raise HTTPException(409, "El restaurante debe estar abierto para confirmar el pedido.")
-    courier = db.execute(select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
-                         .where(Usuario.id_restaurante == restaurant_id, Usuario.activo.is_(True),
-                                Usuario.rol == "repartidor", Repartidor.estado_disponibilidad == "Disponible",
-                                ~exists(select(Entrega.id_entrega).where(Entrega.id_repartidor == Repartidor.id_repartidor,
-                                                                       Entrega.estado.in_(['Asignado', 'En camino', 'asignada']))))
-                         .order_by(Repartidor.id_repartidor).limit(1).with_for_update(read=True)).first()
-    if courier is None:
-        raise HTTPException(409, "No hay repartidores disponibles en este restaurante.")
+    from app.orders.operating_days import register_open_days
+    register_open_days(db, restaurant)
     client = db.scalar(select(Cliente).join(Usuario, Usuario.id_usuario == Cliente.id_usuario)
                        .where(Usuario.id_usuario == user.id_usuario if user.rol == "cliente"
                               else func.lower(Usuario.correo) == data.correo_cliente.lower(),
@@ -76,10 +70,8 @@ def create_order(db: Session, user: Usuario, restaurant_id: int, data: OrderInpu
         db.add_all([DetallePedido(id_pedido=order.id_pedido, id_producto=item.id_producto,
                                  cantidad=item.cantidad, precio_unitario=by_id[item.id_producto].precio)
                     for item in data.detalles])
-        from app.demo_history.simulation import local_demo, MARKER
         db.add(HistorialPedido(id_pedido=order.id_pedido, id_usuario=user.id_usuario,
-            tipo_evento='registro', estado='Nuevo', detalle=f'Registro del pedido. Distancia: {data.distancia_km} km.'
-            + (f' [{MARKER}]' if local_demo() else '')))
+            tipo_evento='registro', estado='Nuevo', detalle=f'Registro del pedido. Distancia: {data.distancia_km} km.'))
         db.flush()
         result = _order_output(db, user, order, restaurant, client.nombre)
         db.commit()
@@ -99,14 +91,14 @@ def courier_available(restaurant_id):
 
 def customer_restaurants(db: Session) -> list[RestaurantOutput]:
     rows = db.execute(select(Restaurante.id_restaurante, Restaurante.nombre, Restaurante.abierto,
-                             (Restaurante.abierto & courier_available(Restaurante.id_restaurante)).label("delivery_disponible"))
+                             Restaurante.abierto.label("delivery_disponible"))
                       .order_by(Restaurante.nombre, Restaurante.id_restaurante)).mappings()
     return [RestaurantOutput(**row) for row in rows]
 
 
 def customer_menu(db: Session, restaurant_id: int) -> CustomerMenuOutput:
     row = db.execute(select(Restaurante.id_restaurante, Restaurante.nombre, Restaurante.abierto,
-                            (Restaurante.abierto & courier_available(Restaurante.id_restaurante)).label("delivery_disponible"))
+                            Restaurante.abierto.label("delivery_disponible"))
                      .where(Restaurante.id_restaurante == restaurant_id)).mappings().first()
     if row is None:
         raise HTTPException(404, "Restaurante no disponible.")
@@ -146,19 +138,28 @@ def state_since_query():
     ).correlate(Pedido).scalar_subquery()
 
 
-def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: str = "historial", fecha=None) -> OrderPage:
+def list_orders(db: Session, user: Usuario, limit: int, offset: int, periodo: str = "historial", fecha=None, anteriores=False) -> OrderPage:
     scoped = scoped_orders(user)
     if periodo not in {"dia", "historial"}:
         raise HTTPException(422, "Período inválido.")
-    reference = operational_date(db, user.id_restaurante) if user.rol in {"personal", "propietario"} else None
+    if user.rol in {'personal', 'propietario', 'repartidor'} and user.id_restaurante:
+        reference = operational_date(db, user.id_restaurante)
+    else:
+        from app.orders.operational_date import OPERATIONAL_ZONE
+        from datetime import UTC
+        latest = db.scalar(select(func.max(Pedido.fecha_hora)))
+        if latest and latest.tzinfo is None:
+            latest = latest.replace(tzinfo=UTC)
+        reference = latest.astimezone(OPERATIONAL_ZONE).date() if latest else None
     if periodo == "dia":
-        if user.rol not in {"personal", "propietario"}:
-            raise HTTPException(403, "La fecha operativa requiere el contexto del restaurante.")
         if reference is None:
             scoped = scoped.where(False)
         else:
             start, end = operational_day_bounds(reference)
             scoped = scoped.where(Pedido.fecha_hora >= start, Pedido.fecha_hora < end)
+    elif anteriores and reference is not None and user.rol in {'cliente', 'repartidor'}:
+        start, _ = operational_day_bounds(reference)
+        scoped = scoped.where(Pedido.fecha_hora < start)
     if fecha is not None:
         start, end = operational_day_bounds(fecha)
         scoped = scoped.where(Pedido.fecha_hora >= start, Pedido.fecha_hora < end)

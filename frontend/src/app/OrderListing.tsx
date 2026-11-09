@@ -8,7 +8,7 @@ import WarningBadge from './WarningBadge';
 import DailyOrders from './DailyOrders';
 
 type Props = { restaurant: number | null; refresh: number; deliveries?: boolean;
-  onOpen: (id: number) => void; onSessionExpired: () => void };
+  onOpen: (id: number) => void; onSessionExpired: () => void; onDateChange?: (date: string) => void };
 
 export function OrderTable({page,restaurant,deliveries=false,onOpen}: Pick<Props,'restaurant'|'deliveries'|'onOpen'> & {page:OrderPage}) {
   return <div className="table-wrap">
@@ -27,25 +27,25 @@ export function OrderTable({page,restaurant,deliveries=false,onOpen}: Pick<Props
 }
 
 /** Una fuente y los mismos filtros para Pedidos y Entregas del restaurante. */
-export default function OrderListing({ restaurant, refresh, deliveries = false, onOpen, onSessionExpired }: Props) {
-  const [period, setPeriod] = useState<'dia' | 'historial'>(restaurant === null ? 'historial' : 'dia');
+export default function OrderListing({ restaurant, refresh, deliveries = false, onOpen, onSessionExpired, onDateChange }: Props) {
+  const [period, setPeriod] = useState<'dia' | 'historial'>('dia');
   const [offset, setOffset] = useState(0);
   const [date, setDate] = useState('');
   const operational = restaurant !== null && !deliveries && period === 'dia';
-  const path = `pedidos?periodo=${period}&limit=20&offset=${offset}${date && period === 'historial' ? `&fecha=${date}` : ''}`;
+  const path = `pedidos?periodo=${period}&limit=20&offset=${offset}${restaurant === null && period === 'historial' ? '&anteriores=true' : ''}${date && period === 'historial' ? `&fecha=${date}` : ''}`;
   const query = useApiQuery<OrderPage>(path, (signal) => orderRequest(path, undefined, signal), onSessionExpired,
     {enabled:!operational});
   const page = query.data;
   const error = query.error?.message;
   const loading = query.isPending;
   return <section aria-label={deliveries ? 'Pedidos y entregas asociadas' : 'Listado de pedidos'}>
-    {restaurant !== null && <div className="tabs" role="tablist" aria-label="Período de pedidos">
-      <button role="tab" aria-selected={period === 'dia'} onClick={() => { setPeriod('dia'); setOffset(0); }}>Pedidos del día</button>
+    <div className="tabs" role="tablist" aria-label="Período de pedidos">
+      <button role="tab" aria-selected={period === 'dia'} onClick={() => { setPeriod('dia'); setOffset(0); onDateChange?.(''); }}>Pedidos del día</button>
       <button role="tab" aria-selected={period === 'historial'} onClick={() => { setPeriod('historial'); setOffset(0); }}>Historial de pedidos</button>
-    </div>}
+    </div>
     {operational ? <DailyOrders restaurant={restaurant} refresh={refresh} onOpen={onOpen} onSessionExpired={onSessionExpired}/> : <>
     <h3>{period === 'dia' ? 'Pedidos del día' : 'Historial de pedidos'}</h3>
-    {period === 'historial' && <label>Fecha de pedido <input type="date" value={date} onChange={event => { setDate(event.target.value); setOffset(0); }}/></label>}
+    {period === 'historial' && <label>Fecha de pedido <input type="date" value={date} onChange={event => { setDate(event.target.value); setOffset(0); onDateChange?.(event.target.value); }}/></label>}
     {error && <p role="alert" className="auth-error">{error}</p>}
     {loading && <p role="status">Cargando pedidos…</p>}
     {!loading && page && <>

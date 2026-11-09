@@ -121,7 +121,7 @@ class OrderHistoryTests(unittest.TestCase):
         self.assertTrue(all(row['id_repartidor'] == 1 for row in own.json()['pedidos']))
         self.assertTrue(all(r["id_repartidor"] == 1 for r in self.client.get("/api/entregas").json()))
         self.sign_in(3)
-        self.assertEqual(self.client.get("/api/pedidos?periodo=dia").status_code, 403)
+        self.assertEqual(self.client.get("/api/pedidos?periodo=dia").status_code, 200)
 
     def test_preparation_trace_matches_order_and_tracking_without_duplicate_event(self):
         # Receta local real, estados permitidos y timestamps del servidor.

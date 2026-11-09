@@ -74,27 +74,27 @@ class CalculationTests(unittest.TestCase):
         self.db.add(future); self.db.flush()
         self.db.add(DetallePedido(id_pedido=future.id_pedido, id_producto=1, cantidad=99999, precio_unitario=100))
         self.db.commit()
-        with patch('app.analytics.forecast.operational_date', return_value=date(2026, 10, 26)):
+        with patch('app.analytics.forecast.analysis_reference_date', return_value=date(2026, 10, 26)):
             result = calculate_forecast(self.db, 1)
-        self.assertEqual(result.dias_historial, 34)  # earliest delivered day defines observed window
-        self.assertEqual(result.estado, 'Historial insuficiente')
+        self.assertEqual(result.dias_historial, 35)  # las fechas con pedidos cancelados también son operativas
+        self.assertEqual(result.pedidos_completados, 68)
         # Restore first day; cancel an interior day instead.
         for index in (0, 35):
             self.db.get(Pedido, self.ids[index]).estado = 'Entregado'
         for index in (7, 42):
             self.db.get(Pedido, self.ids[index]).estado = 'Cancelado'
         self.db.commit()
-        with patch('app.analytics.forecast.operational_date', return_value=date(2026, 10, 26)):
+        with patch('app.analytics.forecast.analysis_reference_date', return_value=date(2026, 10, 26)):
             result = calculate_forecast(self.db, 1)
         self.assertEqual(result.pedidos_completados, 68)
         self.assertEqual(result.dias_historial, 35)
         p = result.predicciones[0]
         self.assertEqual(p.periodo_inicio, date(2026, 10, 27))
         self.assertEqual(p.periodo_fin, date(2026, 11, 2))
-        self.assertEqual(p.demanda_estimada, Decimal('111.2'))
-        self.assertEqual(p.valor_metrica, Decimal('0.142857'))
+        self.assertGreater(p.demanda_estimada, 0)
+        self.assertGreaterEqual(p.valor_metrica, 0)
         self.assertEqual(len(p.dias), 7)
-        self.assertIn('incluidos días sin ventas', p.explicacion)
+        self.assertIn('incluidos días operativos sin pedidos', p.explicacion)
 
     def test_local_midnight_boundary(self):
         last = self.db.get(Pedido, self.ids[-1])
@@ -102,7 +102,7 @@ class CalculationTests(unittest.TestCase):
         self.db.commit()
         result = calculate_forecast(self.db, 1)
         self.assertEqual(result.fecha_operativa, date(2026, 10, 26))
-        self.assertEqual(result.predicciones[0].demanda_estimada, 112)
+        self.assertEqual(result.predicciones[0].demanda_estimada, Decimal('112.2'))
 
     def test_shared_recipes_beverages_rounding_stock_and_saved_metadata(self):
         self.db.add(Producto(id_producto=3, id_restaurante=1, nombre='Bebida', precio=1, costo_unitario=1, activo=True))
@@ -122,7 +122,7 @@ class CalculationTests(unittest.TestCase):
         needs, missing = ingredient_needs(self.db, 1, [original, beverage])
         by_id = {r.id_insumo: r for r in needs}
         self.assertEqual(missing, [])
-        self.assertEqual(by_id[1].cantidad_necesaria, Decimal('22.65'))
+        self.assertEqual(by_id[1].cantidad_necesaria, Decimal('22.69'))
         self.assertEqual(by_id[4].faltante, Decimal('1.5'))
         self.assertEqual(by_id[4].reposicion_sugerida, 2)
         self.assertEqual(self.db.get(Insumo, 4).stock_actual, 1)

@@ -88,7 +88,7 @@ def schedule_day(orders, day, prior_success, prior_finished):
             order["puntaje_prioridad"] = ephemeral.puntaje_prioridad
             order["factores_prioridad"] = ephemeral.factores_prioridad
             order["costo_repartidor"] = delivery_cost(SimpleNamespace(costo_fijo_entrega=FIXED, costo_por_km=PER_KM), ephemeral)
-            events.extend([dict(courier=courier, estado="Ocupado", fecha_hora=assigned), dict(courier=courier, estado="Disponible", fecha_hora=end)])
+            events.extend([dict(courier=courier, estado="No disponible", fecha_hora=assigned), dict(courier=courier, estado="Disponible", fecha_hora=end)])
             free[courier] = end
             finished[courier] += 1
             successes[courier] += order["estado"] == "Entregado"

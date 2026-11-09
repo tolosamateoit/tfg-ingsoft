@@ -15,5 +15,5 @@ export type Delivery = {
 };
 export type Tracking = {
   id_pedido: number; estado_pedido: string; entrega: Delivery | null;
-  historial: { id_historial: number; fecha_hora: string; usuario: string; estado: string; detalle: string | null }[];
+  historial: { id_historial: number; fecha_hora: string; usuario: string | null; estado: string; detalle: string | null }[];
 };

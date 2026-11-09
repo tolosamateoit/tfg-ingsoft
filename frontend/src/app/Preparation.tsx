@@ -2,7 +2,7 @@ import { useApiQuery } from '../services/useApiQuery';
 import { formatDateTime } from '../services/format';
 import { displayText, Status } from './ui';
 import { useEffect, useState } from 'react';
-import { operationRequest, type Preparation as PreparationData } from '../services/operations';
+import { operationRequest, type CourierPage, type Preparation as PreparationData } from '../services/operations';
 import { OrderError } from '../services/orders';
 
 type Props = { restaurant: number; order: number; onSessionExpired: () => void; onChanged: (estado: string) => void };
@@ -20,6 +20,8 @@ export default function Preparation({ restaurant, order, onSessionExpired, onCha
   }
 
   const query = useApiQuery<PreparationData>(path, (signal) => operationRequest(path, undefined, signal), onSessionExpired);
+  const courierPath = `restaurantes/${restaurant}/repartidores`;
+  const couriers = useApiQuery<CourierPage>(courierPath, signal => operationRequest(courierPath, undefined, signal), onSessionExpired, {interval:10000});
   const data = query.data;
   const queryError = query.error?.message;
   useEffect(() => { if (data) onChanged(data.estado); }, [data?.estado]);
@@ -43,10 +45,11 @@ export default function Preparation({ restaurant, order, onSessionExpired, onCha
     {!data ? <p>Cargando preparación…</p> : <>
       <p><Status value={data.estado}/></p>
       <div className="menu-actions">
-        {data.estado === 'Nuevo' && <button disabled={busy} onClick={() => void change('En preparación')}>Iniciar preparación</button>}
+        {data.estado === 'Nuevo' && <button disabled={busy || !couriers.data?.delivery_disponible} onClick={() => void change('En preparación')}>Iniciar preparación</button>}
         {data.estado === 'En preparación' && <button disabled={busy} onClick={() => void change('Listo')}>Marcar listo</button>}
         {['En preparación', 'Listo'].includes(data.estado) && <button disabled={busy} onClick={() => setRepeat(!repeat)}>Nueva preparación explícita</button>}
       </div>
+      {data.estado === 'Nuevo' && couriers.data && !couriers.data.delivery_disponible && <p>{couriers.data.abierto ? 'No hay repartidores disponibles para confirmar el pedido.' : 'El restaurante está cerrado.'}</p>}
       {repeat && <div className="menu-form">
         <p>Esta acción registra otra preparación y vuelve a consumir los insumos. Usala si la preparación anterior se arruinó.</p>
         <label htmlFor={`repeat-reason-${order}`}>Motivo de la nueva preparación</label>

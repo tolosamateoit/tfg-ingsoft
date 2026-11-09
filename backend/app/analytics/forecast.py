@@ -7,14 +7,16 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, localcontext
 from itertools import combinations
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.analytics.schemas import DayForecastOutput, ForecastItem, ForecastOutput, IngredientNeed, PreparationProduct
 from app.auth.service import as_utc
 from app.db.models import DetallePedido, Insumo, Pedido, PrediccionDemanda, Producto, RecetaDetalle
-from app.orders.operational_date import operational_date, operational_day_bounds, OPERATIONAL_ZONE
+from app.orders.operational_date import operational_day_bounds, OPERATIONAL_ZONE
 from app.orders.service import lock_order_relations
+from app.orders.operating_days import operating_days, analysis_reference_date
+from app.db.models import DiaOperativo
 
 
 def utc_today(db: Session):
@@ -26,14 +28,16 @@ def rounded(value):
     return Decimal(str(value)).quantize(Decimal('0.000001'))
 
 
-def predict(values, start, offset, method):
+def predict(values, start, offset, method, *, dates=None, target=None):
     sample = [value for index, value in enumerate(values)
-              if method == 'promedio_diario' or (start + timedelta(days=index)).weekday()
-              == (start + timedelta(days=offset)).weekday()]
+              if method == 'promedio_diario' or (dates[index] if dates is not None else start + timedelta(days=index)).weekday()
+              == (target if target is not None else start + timedelta(days=offset)).weekday()]
+    if not sample:
+        sample = values  # Sin antecedentes de ese día de semana, usar la referencia diaria existente.
     return sum(sample) / len(sample)
 
 
-def evaluate_series(values, start, *, method=None):
+def evaluate_series(values, start, *, method=None, dates=None, future_start=None):
     """21+ días iniciales, 7 de selección y 7 de prueba independiente.
 
     Cada bloque representa una predicción de siete días sin actualizarse con
@@ -43,13 +47,14 @@ def evaluate_series(values, start, *, method=None):
         raise ValueError('Se requieren 35 días para selección y evaluación independientes.')
     methods = ('promedio_diario', 'promedio_dia_semana')
     split = len(values) - 14
-    scores = {method: sum(abs(values[i] - predict(values[:split], start, i, method))
+    scores = {method: sum(abs(values[i] - predict(values[:split], start, i, method, dates=dates[:split] if dates else None, target=dates[i] if dates else None))
                           for i in range(split, split + 7)) / 7 for method in methods}
     chosen = method or min(methods, key=scores.get)  # empate: referencia más simple
     test_start = len(values) - 7
-    errors = {method: sum(abs(values[i] - predict(values[:test_start], start, i, method))
+    errors = {method: sum(abs(values[i] - predict(values[:test_start], start, i, method, dates=dates[:test_start] if dates else None, target=dates[i] if dates else None))
                           for i in range(test_start, len(values))) / 7 for method in methods}
-    daily = [rounded(predict(values, start, len(values) + i, chosen)) for i in range(7)]
+    daily = [rounded(predict(values, start, len(values) + i, chosen, dates=dates,
+                     target=future_start + timedelta(days=i) if future_start else None)) for i in range(7)]
     return chosen, scores, errors, daily
 
 
@@ -122,7 +127,7 @@ def associations(baskets, names):
 def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | None = None,
                        reference_day: date | None = None, history_orders=None):
     """Cálculo sin escrituras, también utilizable en verificación READ ONLY."""
-    day = reference_day if reference_day is not None else operational_date(db, restaurant_id)
+    day = reference_day if reference_day is not None else analysis_reference_date(db, restaurant_id)
     if day is None:
         return ForecastOutput(estado='Historial insuficiente', dias_historial=0, pedidos_completados=0)
     if target_date is not None and not day <= target_date <= day + timedelta(days=7):
@@ -131,16 +136,20 @@ def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | N
     history_end = min(day, target_date - timedelta(days=1)) if target_date else day
     cutoff = operational_day_bounds(history_end)[1]
     if history_orders is None:
-        orders = db.execute(select(Pedido.id_pedido, Pedido.fecha_hora).where(
-            Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Entregado', Pedido.fecha_hora < cutoff)).all()
+        orders = db.execute(select(Pedido.id_pedido, Pedido.fecha_hora, Pedido.estado).where(
+            Pedido.id_restaurante == restaurant_id, Pedido.fecha_hora < cutoff)).all()
     else:
-        orders = [row for row in history_orders if row.estado == 'Entregado' and as_utc(row.fecha_hora) < cutoff]
-    start = min((as_utc(row.fecha_hora).astimezone(OPERATIONAL_ZONE).date() for row in orders), default=day)
-    days = (history_end - start).days + 1 if orders else 0
+        orders = [row for row in history_orders if as_utc(row.fecha_hora) < cutoff]
+    earliest_order = db.scalar(select(func.min(Pedido.fecha_hora)).where(Pedido.id_restaurante == restaurant_id, Pedido.fecha_hora < cutoff))
+    earliest_record = db.scalar(select(func.min(DiaOperativo.fecha)).where(DiaOperativo.id_restaurante == restaurant_id, DiaOperativo.fecha <= history_end))
+    first_order = as_utc(earliest_order).astimezone(OPERATIONAL_ZONE).date() if earliest_order else None
+    start = min((value for value in (first_order, earliest_record) if value is not None), default=history_end)
+    dates = operating_days(db, restaurant_id, start, history_end)
+    days = len(dates)
     result = ForecastOutput(estado='Historial insuficiente', fecha_operativa=day,
-                            dias_historial=days, pedidos_completados=len(orders))
-    if days < 35 or len(orders) < 10:
-        result.limitaciones = ['Se requieren 35 días y 10 pedidos entregados: 21 días iniciales, 7 para elegir el método y 7 para evaluarlo.']
+                            dias_historial=days, pedidos_completados=sum(row.estado == 'Entregado' for row in orders))
+    if days < 35 or result.pedidos_completados < 10:
+        result.limitaciones = ['Se requieren 35 días operativos y 10 pedidos entregados: 21 días iniciales, 7 para elegir el método y 7 para evaluarlo.']
         return result
     products = db.scalars(select(Producto).where(Producto.id_restaurante == restaurant_id,
                           Producto.activo.is_(True)).order_by(Producto.id_producto)).all()
@@ -148,22 +157,24 @@ def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | N
     sales = db.execute(select(DetallePedido.id_producto, Pedido.fecha_hora, DetallePedido.cantidad, Pedido.id_pedido)
         .join(Pedido, Pedido.id_pedido == DetallePedido.id_pedido).join(Producto)
         .where(Pedido.id_restaurante == restaurant_id, Producto.id_restaurante == restaurant_id,
-               Pedido.estado == 'Entregado', Pedido.fecha_hora < cutoff, Producto.activo.is_(True))).all()
+               Pedido.fecha_hora < cutoff, Producto.activo.is_(True))).all()
     series = defaultdict(lambda: [0] * days)
-    baskets = {row.id_pedido: set() for row in orders}
+    day_index = {day: index for index, day in enumerate(dates)}
+    baskets = {row.id_pedido: set() for row in orders if row.estado == 'Entregado'}
     for product_id, timestamp, quantity, order_id in sales:
-        series[product_id][(as_utc(timestamp).astimezone(OPERATIONAL_ZONE).date() - start).days] += quantity
-        baskets[order_id].add(product_id)
+        series[product_id][day_index[as_utc(timestamp).astimezone(OPERATIONAL_ZONE).date()]] += quantity
+        if order_id in baskets:
+            baskets[order_id].add(product_id)
     generated = as_utc(db.scalar(select(func.now())))
     for product in products:
         if product.id_producto not in series:
             result.productos_sin_ventas.append(product.nombre)
             continue
-        chosen, scores, errors, daily = evaluate_series(series[product.id_producto], start,
-            method='promedio_dia_semana' if target_date else None)
         first_date = target_date or day + timedelta(days=1)
+        chosen, scores, errors, daily = evaluate_series(series[product.id_producto], start,
+            method='promedio_dia_semana' if target_date else None, dates=dates, future_start=first_date)
         if target_date:
-            daily = [rounded(predict(series[product.id_producto], start, (target_date - start).days, chosen))]
+            daily = [rounded(predict(series[product.id_producto], start, 0, chosen, dates=dates, target=target_date))]
         result.predicciones.append(ForecastItem(id_prediccion=0, id_producto=product.id_producto,
             producto=product.nombre, periodo_inicio=first_date, periodo_fin=target_date or day + timedelta(days=7),
             demanda_estimada=sum(daily), modelo=chosen, nombre_metrica='MAE', valor_metrica=rounded(errors[chosen]),
@@ -171,9 +182,9 @@ def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | N
             observaciones_evaluadas=7, comparacion_mae={m: rounded(v) for m, v in scores.items()},
             mae_referencia=rounded(errors['promedio_diario']),
             explicacion=('Promedio de las ventas de cada día de semana.' if chosen == 'promedio_dia_semana' else 'Promedio diario de ventas.')
-                + (' Evaluado en los últimos 7 días independientes; patrón del día de semana solicitado.' if target_date else
-                   ' Elegido por menor MAE en los 7 días de selección; evaluado en otros 7 días posteriores.')
-                + f' Historial: {start} a {history_end}, incluidos días sin ventas.'))
+                + (' Evaluado en los últimos 7 días operativos independientes; patrón del día de semana solicitado.' if target_date else
+                   ' Elegido por menor MAE en 7 días operativos de selección; evaluado en otros 7 posteriores.')
+                + f' Historial: {start} a {history_end}, incluidos días operativos sin pedidos.'))
     result.dias_validacion = 7
     result.observaciones_evaluadas = len(result.predicciones) * 7
     result.mae = rounded(sum(p.valor_metrica for p in result.predicciones) / len(result.predicciones)) if result.predicciones else None
@@ -182,12 +193,12 @@ def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | N
     else:
         order_counts = [0] * days
         for order in orders:
-            order_counts[(as_utc(order.fecha_hora).astimezone(OPERATIONAL_ZONE).date() - start).days] += 1
+            order_counts[day_index[as_utc(order.fecha_hora).astimezone(OPERATIONAL_ZONE).date()]] += 1
         result.pedidos_estimados_original = rounded(predict(order_counts, start,
-            (target_date - start).days, 'promedio_dia_semana'))
+            0, 'promedio_dia_semana', dates=dates, target=target_date))
     result.asociaciones = associations(baskets, names)
-    result.limitaciones = ['Estimaciones basadas en pedidos entregados, por fecha local de creación; no miden demanda no atendida. La fecha operativa se considera cerrada.',
-        'MAE calculado en una semana independiente; no garantiza el error de semanas futuras. El historial sintético valida la demo, no precisión comercial.']
+    result.limitaciones = ['Estimaciones basadas en pedidos registrados, por fecha local de creación y días operativos; no miden demanda no registrada.',
+        'MAE calculado en 7 días operativos independientes; no garantiza el error futuro. El historial sintético valida la demo, no precisión comercial.']
     if not result.asociaciones:
         result.limitaciones.append('Sin evidencia suficiente para afirmar asociaciones entre productos.')
     result.estado = 'Predicción generada' if result.predicciones else 'Sin productos activos con ventas históricas'
@@ -196,8 +207,8 @@ def calculate_forecast(db: Session, restaurant_id: int, *, target_date: date | N
 
 def day_forecast(db: Session, restaurant_id: int, selected: date | None = None, *,
                  reference_day: date | None = None, history_orders=None) -> DayForecastOutput:
-    """Vista de preparación sin escrituras; redondeo separado de la evaluación."""
-    day = reference_day if reference_day is not None else operational_date(db, restaurant_id)
+    """Promedio de los siete últimos días abiertos del mismo día de semana."""
+    day = reference_day if reference_day is not None else analysis_reference_date(db, restaurant_id)
     if day is None:
         return DayForecastOutput(estado='Sin historial', aviso='Todavía no hay pedidos para estimar la demanda.')
     target = selected or day
@@ -206,32 +217,71 @@ def day_forecast(db: Session, restaurant_id: int, selected: date | None = None, 
     options = [dict(fecha=day + timedelta(days=i),
                     etiqueta=f'{weekdays[(day + timedelta(days=i)).weekday()]} {(day + timedelta(days=i)):%d/%m}')
                for i in range(8)]
-    calculated = calculate_forecast(db, restaurant_id, target_date=target, reference_day=day, history_orders=history_orders)
-    result = DayForecastOutput(estado=calculated.estado, fecha_operativa=day, fecha_seleccionada=target,
-                               fechas_disponibles=options, evaluacion=calculated)
-    if not calculated.predicciones:
-        result.aviso = 'Todavía no hay suficiente historial para recomendar cuánto preparar.'
+    if not day <= target <= day + timedelta(days=7):
+        raise HTTPException(422, 'Elegí una fecha entre la fecha operativa y los siete días siguientes.')
+    history_end = min(day, target - timedelta(days=1))
+    cutoff = operational_day_bounds(history_end)[1]
+    first_order = db.scalar(select(func.min(Pedido.fecha_hora)).where(
+        Pedido.id_restaurante == restaurant_id, Pedido.fecha_hora < cutoff))
+    first_record = db.scalar(select(func.min(DiaOperativo.fecha)).where(
+        DiaOperativo.id_restaurante == restaurant_id, DiaOperativo.fecha <= history_end))
+    first_order_day = as_utc(first_order).astimezone(OPERATIONAL_ZONE).date() if first_order else None
+    first = min((value for value in (first_record, first_order_day) if value is not None), default=history_end)
+    dates = [value for value in operating_days(db, restaurant_id, first, history_end)
+             if value.weekday() == target.weekday()][-7:]
+    result = DayForecastOutput(estado='Historial insuficiente', fecha_operativa=day, fecha_seleccionada=target,
+                               fechas_disponibles=options)
+    if not dates:
+        result.aviso = 'Todavía no hay días operativos anteriores de este día de la semana para calcular una recomendación.'
         return result
-    result.pedidos_estimados = int(calculated.pedidos_estimados_original.to_integral_value(rounding=ROUND_CEILING))
+
+    products = db.scalars(select(Producto).where(Producto.id_restaurante == restaurant_id,
+        Producto.activo.is_(True)).order_by(Producto.id_producto)).all()
+    names = {product.id_producto: product.nombre for product in products}
+    windows = [operational_day_bounds(value) for value in dates]
+    rows = db.execute(select(Pedido.id_pedido, Pedido.fecha_hora, DetallePedido.id_producto, DetallePedido.cantidad)
+        .join(DetallePedido, DetallePedido.id_pedido == Pedido.id_pedido)
+        .where(Pedido.id_restaurante == restaurant_id, Pedido.estado == 'Entregado',
+               or_(*(and_(Pedido.fecha_hora >= start, Pedido.fecha_hora < end) for start, end in windows)))).all()
+    units = defaultdict(int)
+    orders = {value: set() for value in dates}
+    for order_id, timestamp, product_id, quantity in rows:
+        order_day = as_utc(timestamp).astimezone(OPERATIONAL_ZONE).date()
+        orders[order_day].add(order_id)
+        if product_id in names:
+            units[product_id, order_day] += quantity
+    result.pedidos_estimados = int((Decimal(sum(len(orders[value]) for value in dates)) / len(dates))
+                                   .to_integral_value(rounding=ROUND_CEILING))
     prepared = []
-    for item in calculated.predicciones:
-        quantity = int(item.demanda_estimada.to_integral_value(rounding=ROUND_CEILING))
-        result.productos.append(PreparationProduct(id_producto=item.id_producto, nombre=item.producto,
-                                    cantidad=quantity, estimacion_original=item.demanda_estimada))
+    predictions = []
+    generated = as_utc(db.scalar(select(func.now())))
+    for product in products:
+        history = [dict(fecha=value, unidades=units[product.id_producto, value]) for value in dates]
+        average = Decimal(sum(row['unidades'] for row in history)) / len(dates)
+        quantity = int(average.to_integral_value(rounding=ROUND_CEILING))
+        result.productos.append(PreparationProduct(id_producto=product.id_producto, nombre=product.nombre,
+                                    cantidad=quantity, estimacion_original=rounded(average), historial_ventas=history))
+        item = ForecastItem(id_prediccion=0, id_producto=product.id_producto, producto=product.nombre,
+            periodo_inicio=target, periodo_fin=target, demanda_estimada=rounded(average), modelo='promedio_dia_semana',
+            nombre_metrica=None, valor_metrica=None, generada_en=generated,
+            dias=[dict(fecha=target, cantidad=rounded(average))],
+            explicacion=f'Promedio de {len(dates)} días operativos anteriores del mismo día de semana.')
+        predictions.append(item)
         if quantity > 0:
             prepared.append(item.model_copy(update={'demanda_estimada': Decimal(quantity)}))
+    result.estado = 'Predicción generada'
+    result.evaluacion = ForecastOutput(estado=result.estado, fecha_operativa=day, dias_historial=len(dates),
+                                      predicciones=predictions)
     result.productos.sort(key=lambda p: (-p.estimacion_original, p.id_producto))
     result.insumos, missing = ingredient_needs(db, restaurant_id, prepared, preparation=True)
     result.compras_completas = not missing
     result.cantidad_faltantes = sum(row.faltante > 0 for row in result.insumos)
-    result.explicaciones = [f'Tomamos como referencia tus ventas de los {weekday_names[target.weekday()]} anteriores, incluidos los días sin ventas.']
-    if result.productos[0].cantidad > 0:
+    result.explicaciones = [f'Tomamos como referencia las ventas de los últimos {len(dates)} {weekday_names[target.weekday()]} operativos, incluidos los días sin ventas.']
+    if result.productos and result.productos[0].cantidad > 0:
         result.explicaciones.append(f'{result.productos[0].nombre} fue el producto con más unidades vendidas en esos días.')
     notices = []
     if missing:
         notices.append('Compras incompletas: faltan recetas de ' + ', '.join(missing) + '.')
-    if calculated.productos_sin_ventas:
-        notices.append('Sin ventas previas para estimar: ' + ', '.join(calculated.productos_sin_ventas) + '.')
     result.aviso = ' '.join(notices) or None
     return result
 

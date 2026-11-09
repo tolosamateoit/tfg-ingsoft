@@ -71,12 +71,12 @@ class OrderReadTests(unittest.TestCase):
 
     def test_delivery_requires_available_active_courier_of_that_restaurant(self):
         with Session(self.engine) as db:
-            db.get(Repartidor, 1).estado_disponibilidad = "Ocupado"
+            db.get(Repartidor, 1).estado_disponibilidad = "No disponible"
             db.get(Usuario, 9).activo = False
             db.commit()
         restaurants = self.client.get("/api/restaurantes").json()
         self.assertEqual({r["id_restaurante"]: r["delivery_disponible"] for r in restaurants},
-                         {1: False, 2: False})  # el otro repartidor también tiene una entrega activa
+                         {1: True, 2: True})
 
     def test_customer_sees_only_own_orders_across_restaurants(self):
         response = self.client.get("/api/pedidos")
@@ -190,11 +190,11 @@ class OrderReadTests(unittest.TestCase):
         with Session(self.engine) as db:
             db.get(Restaurante, 1).abierto = True
             for courier_id in (1, 3):
-                db.get(Repartidor, courier_id).estado_disponibilidad = "Ocupado"
+                db.get(Repartidor, courier_id).estado_disponibilidad = "No disponible"
             db.commit()
-        self.assertEqual(self.post_order().status_code, 409)
+        self.assertEqual(self.post_order().status_code, 201)
         with Session(self.engine) as db:
-            self.assertEqual(db.scalar(select(func.count()).select_from(Pedido)), 3)
+            self.assertEqual(db.scalar(select(func.count()).select_from(Pedido)), 4)
 
     def test_invalid_foreign_inactive_and_nonexistent_products(self):
         for product in (2, 999):

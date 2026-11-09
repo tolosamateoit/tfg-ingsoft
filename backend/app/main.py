@@ -1,18 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-from app.demo_history.simulation import local_demo, start
-
-
-@asynccontextmanager
-async def lifespan(app):
-    worker = start() if local_demo() else None
-    yield
-    if worker:
-        worker[0].set()
-        worker[1].join(timeout=10)
-
 from app.api.health import router as health_router
 from app.api.auth import router as auth_router
 from app.api.menu import router as menu_router
@@ -23,9 +11,9 @@ from app.api.logistics import router as logistics_router
 from app.api.analytics import router as analytics_router
 from app.api.dashboard import router as dashboard_router
 from app.api.support import router as support_router
+from app.api.staff import router as staff_router
 
 app = FastAPI(
-    lifespan=lifespan,
     title="Demo académica · Pedidos y delivery",
     description="Demo académica. Autenticación y gestión de productos y recetas por restaurante.",
     version="0.4.0",
@@ -41,6 +29,7 @@ app.include_router(logistics_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(support_router, prefix="/api")
+app.include_router(staff_router, prefix="/api")
 
 
 @app.exception_handler(RequestValidationError)

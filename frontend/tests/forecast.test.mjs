@@ -47,7 +47,7 @@ test('React presenta ocho fechas y solo la preparacion y compras del dia calcula
   assert.match(html, /<span>Lun<\/span><strong>26\/10/);
   assert.match(html, /<span>Lun<\/span><strong>02\/11/);
   assert.doesNotMatch(html, /MAE|lift|frecuencia relativa|observaciones|entrenamiento|algoritmo/);
-  assert.equal(data.evaluacion.predicciones[0].nombre_metrica, 'MAE');
+  assert.equal(data.evaluacion.predicciones[0].nombre_metrica, null);
 });
 
 test('React muestra solo faltantes, cantidades de compra legibles y mensaje de stock suficiente', () => {
@@ -73,4 +73,21 @@ test('al cambiar fecha se ocultan las cifras previas durante la carga', () => {
   assert.match(html, /Calculando/);
   assert.doesNotMatch(html, /pedidos estimados|Harina|Pizza/);
   assert.equal((html.match(/aria-pressed="true"/g) || []).length, 1);
+});
+
+test('cada tarjeta muestra el detalle comprobable del backend en un desplegable nativo cerrado', () => {
+  const product = { ...data.productos[0], cantidad: 5, estimacion_original: '4.333333', historial_ventas: [
+    {fecha: '2026-09-14', unidades: 8}, {fecha: '2026-09-21', unidades: 0}, {fecha: '2026-09-28', unidades: 5},
+  ] };
+  const html = render({ ...data, productos: [product] });
+  assert.match(html, /<details class="forecast-product-history">/);
+  assert.ok(html.includes(`<summary aria-label="Ver detalle de ventas de ${product.nombre}"`));
+  assert.match(html, /3 de 7 días operativos/);
+  assert.match(html, /21\/09\/2026: 0 unidades/);
+  assert.match(html, /Promedio: 4,333333 unidades/);
+  assert.match(html, /Redondeado hacia arriba: 5 unidades/);
+  assert.doesNotMatch(html, /<details[^>]* open/);
+  const changed = render({ ...data, productos: [{...product, historial_ventas: [{fecha:'2026-10-01', unidades: 2}]}] });
+  assert.match(changed, /01\/10\/2026: 2 unidades/);
+  assert.doesNotMatch(changed, /21\/09\/2026/);
 });

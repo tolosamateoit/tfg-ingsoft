@@ -87,7 +87,7 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(self.post(BASE + "/pedidos", {**payload, "detalles": [{"id_producto": 2, "cantidad": 1}]}).status_code, 422)
         with Session(self.engine) as db:
             for id in (1, 3):
-                db.get(Repartidor, id).estado_disponibilidad = "Ocupado"
+                db.get(Repartidor, id).estado_disponibilidad = "No disponible"
             db.commit()
         self.assertEqual(self.post(BASE + "/pedidos", payload).status_code, 409)
         self.assertEqual(self.client.get(BASE + "/menu").status_code, 200)

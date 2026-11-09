@@ -63,11 +63,17 @@ class ForecastDateOption(BaseModel):
     etiqueta: str
 
 
+class HistoricalSalesDay(BaseModel):
+    fecha: date
+    unidades: int
+
+
 class PreparationProduct(BaseModel):
     id_producto: int
     nombre: str
     cantidad: int
     estimacion_original: Decimal
+    historial_ventas: list[HistoricalSalesDay] = []
 
 
 class DayForecastOutput(BaseModel):

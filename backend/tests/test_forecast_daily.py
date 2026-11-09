@@ -1,5 +1,5 @@
 ﻿"""Previsión diaria: fechas operativas, unidades de preparación y lectura segura."""
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 import unittest
@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analytics.forecast import day_forecast
-from app.db.models import DetallePedido, Insumo, Pedido, PrediccionDemanda, Producto, RecetaDetalle
+from app.db.models import DiaOperativo, DetallePedido, Insumo, Pedido, PrediccionDemanda, Producto, RecetaDetalle, Restaurante
 from tests import test_analytics
 
 
@@ -56,7 +56,7 @@ class DayForecastTests(unittest.TestCase):
             # Fecha futura respecto del corte operativo fijado para esta comprobación.
             db.get(Pedido, ids[40]).fecha_hora += timedelta(days=20)
             db.commit()
-        with patch('app.analytics.forecast.operational_date', return_value=date(2026, 10, 26)):
+        with patch('app.analytics.forecast.analysis_reference_date', return_value=date(2026, 10, 26)):
             after = self.daily().json()
         self.assertEqual(before['productos'], after['productos'])
         self.assertEqual(before['pedidos_estimados'], after['pedidos_estimados'])
@@ -86,10 +86,10 @@ class DayForecastTests(unittest.TestCase):
         self.assertEqual(Decimal(needs[4]['stock_actual']), 1)
         self.assertEqual(Decimal(needs[4]['reposicion_sugerida']), 1)
         self.assertEqual(data['cantidad_faltantes'], 2)
-        self.assertIn('lunes anteriores', data['explicaciones'][0])
+        self.assertIn('lunes operativos', data['explicaciones'][0])
         self.assertIn(product['nombre'], data['explicaciones'][1])
         self.assertEqual(data['evaluacion']['predicciones'][0]['modelo'], 'promedio_dia_semana')
-        self.assertIsNotNone(data['evaluacion']['mae'])
+        self.assertIsNone(data['evaluacion']['mae'])
         with Session(self.engine) as db:
             self.assertEqual(db.get(Insumo, 4).stock_actual, Decimal('1.7'))
             self.assertEqual(db.scalar(select(func.count()).select_from(PrediccionDemanda)), 0)
@@ -104,7 +104,7 @@ class DayForecastTests(unittest.TestCase):
         data = self.daily().json()
         self.assertEqual(data['productos'][0]['estimacion_original'], '22.400000')
         self.assertEqual(data['productos'][0]['cantidad'], 23)
-        self.assertEqual(data['pedidos_estimados'], 2)  # 1.6 redondeado hacia arriba
+        self.assertEqual(data['pedidos_estimados'], 2)
         self.assertFalse(data['compras_completas'])
         self.assertIn('faltan recetas', data['aviso'])
         self.assertEqual(data['insumos'], [])
@@ -116,7 +116,7 @@ class DayForecastTests(unittest.TestCase):
         self.assertEqual(len(data['fechas_disponibles']), 8)
         self.assertEqual(data['productos'], [])
         self.assertIsNone(data['pedidos_estimados'])
-        self.assertIn('suficiente historial', data['aviso'])
+        self.assertIn('no hay días operativos anteriores', data['aviso'])
 
     def test_authorization_and_restaurant_scope(self):
         self.history()
@@ -127,4 +127,61 @@ class DayForecastTests(unittest.TestCase):
         self.assertEqual(self.daily().json()['productos'][0]['cantidad'], 28)
         self.assertEqual(self.client.get('/api/restaurantes/2/predicciones/diaria').status_code, 403)
         self.sign_in(1)
-        self.assertEqual(self.daily().status_code, 403)
+        self.assertEqual(self.daily().status_code, 200)
+
+    def test_last_seven_operating_weekdays_drive_products_orders_and_recipes(self):
+        target = date(2026, 11, 9)  # lunes
+        with Session(self.engine) as db:
+            db.get(Restaurante, 1).abierto = False
+            db.add(Producto(id_producto=3, id_restaurante=1, nombre='Bebida', precio=10, costo_unitario=1, activo=True))
+            db.flush()
+            db.add(RecetaDetalle(id_producto=3, id_insumo=1, cantidad=Decimal('.5'), unidad='kg'))
+            for weeks in range(1, 10):
+                day = target - timedelta(weeks=weeks)
+                if weeks == 4:  # cerrado: no cuenta como cero
+                    continue
+                db.add(DiaOperativo(id_restaurante=1, fecha=day))
+                if weeks == 3:  # abierto sin ventas
+                    continue
+                order = Pedido(id_restaurante=1, id_cliente=1, fecha_hora=datetime(day.year, day.month, day.day, 12, tzinfo=UTC),
+                    estado='Entregado', direccion_entrega='Prueba', medio_pago='efectivo', estado_pago='pagado',
+                    importe_total=100, costo_total=10, distancia_km=1)
+                db.add(order); db.flush()
+                db.add(DetallePedido(id_pedido=order.id_pedido, id_producto=1, cantidad=weeks, precio_unitario=10))
+                if weeks in (8, 2):
+                    db.add(DetallePedido(id_pedido=order.id_pedido, id_producto=3, cantidad=2, precio_unitario=10))
+            # Una orden cancelada de la fecha seleccionada como muestra no es una venta.
+            day = target - timedelta(weeks=2)
+            cancelled = Pedido(id_restaurante=1, id_cliente=1, fecha_hora=datetime(day.year, day.month, day.day, 13, tzinfo=UTC),
+                estado='Cancelado', direccion_entrega='Prueba', medio_pago='efectivo', estado_pago='pendiente',
+                importe_total=100, costo_total=10, distancia_km=1)
+            db.add(cancelled); db.flush()
+            db.add(DetallePedido(id_pedido=cancelled.id_pedido, id_producto=1, cantidad=999, precio_unitario=10))
+            db.commit()
+            result = day_forecast(db, 1, target, reference_day=target)
+        products = {row.id_producto: row for row in result.productos}
+        pizza = products[1]
+        self.assertEqual([row.fecha for row in pizza.historial_ventas], [target - timedelta(weeks=w) for w in (8, 7, 6, 5, 3, 2, 1)])
+        self.assertEqual([row.unidades for row in pizza.historial_ventas], [8, 7, 6, 5, 0, 2, 1])
+        self.assertEqual(pizza.estimacion_original, Decimal('4.142857'))
+        self.assertEqual(pizza.cantidad, 5)
+        self.assertEqual(products[3].estimacion_original, Decimal('0.571429'))
+        self.assertEqual(products[3].cantidad, 1)
+        self.assertEqual(result.pedidos_estimados, 1)
+        self.assertEqual(result.insumos[0].cantidad_necesaria, Decimal('1.5'))
+
+    def test_fewer_than_seven_weekdays_and_no_history(self):
+        target = date(2026, 11, 9)
+        with Session(self.engine) as db:
+            db.get(Restaurante, 1).abierto = False
+            first = target - timedelta(weeks=1)
+            db.add(DiaOperativo(id_restaurante=1, fecha=first))
+            db.flush()
+            result = day_forecast(db, 1, target, reference_day=target)
+            self.assertEqual(result.productos[0].cantidad, 0)
+            self.assertEqual([(x.fecha, x.unidades) for x in result.productos[0].historial_ventas], [(first, 0)])
+            self.assertEqual(result.pedidos_estimados, 0)
+            db.delete(db.get(DiaOperativo, (1, first))); db.flush()
+            absent = day_forecast(db, 1, target, reference_day=target)
+            self.assertIsNone(absent.pedidos_estimados)
+            self.assertFalse(absent.productos)

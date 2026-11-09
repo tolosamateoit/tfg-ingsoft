@@ -30,7 +30,7 @@ class RatesOutput(RatesInput):
 
 class AvailabilityInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    estado_disponibilidad: Literal["Disponible", "Ocupado", "No disponible"]
+    estado_disponibilidad: Literal["Disponible", "No disponible"]
 
 
 class CourierOutput(BaseModel):

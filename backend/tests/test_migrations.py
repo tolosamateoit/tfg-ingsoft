@@ -38,7 +38,7 @@ class InitialMigrationTests(unittest.TestCase):
     def test_upgrade_offline_contains_exact_der_columns(self):
         sql = render_migration()
         tables = re.findall(r"CREATE TABLE (\w+) \(\n(.*?)\n\);", sql, flags=re.DOTALL)
-        self.assertEqual({name for name, _ in tables}, set(Base.metadata.tables))
+        self.assertEqual({name for name, _ in tables}, set(Base.metadata.tables) - {'dia_operativo'})
         for name, body in tables:
             columns = re.findall(r"^    (\w+) (?:INTEGER|TEXT|BOOLEAN|NUMERIC|DATE|TIMESTAMP|JSONB)\b", body, flags=re.MULTILINE)
             approved = {"descripcion", "imagen_url"} if name == "producto" else {"activo"} if name == "insumo" else set()
@@ -65,7 +65,7 @@ class InitialMigrationTests(unittest.TestCase):
 
     def test_downgrade_removes_only_application_objects(self):
         sql = render_migration(downgrade=True)
-        for name in Base.metadata.tables:
+        for name in set(Base.metadata.tables) - {'dia_operativo'}:
             self.assertIn(f"DROP TABLE public.{name};", sql)
         self.assertNotIn("CASCADE", sql)
         self.assertIn("DROP FUNCTION public.tfg_validar_relacion()", sql)

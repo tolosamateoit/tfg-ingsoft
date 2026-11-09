@@ -44,14 +44,14 @@ class ForecastTemporalAuditTests(unittest.TestCase):
                     order.estado = "No entregado"
             db.commit()
         events = []
-        def observed(values, start, offset, method):
-            events.append((len(values), offset))
-            return predict(values, start, offset, method)
+        def observed(values, start, offset, method, **kwargs):
+            events.append((len(values), offset, list(values)))
+            return predict(values, start, offset, method, **kwargs)
         with patch("app.analytics.forecast.predict", side_effect=observed):
             response = self.generate()
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertTrue(all(end <= offset for end, offset in events))
-        self.assertEqual({end for end, offset in events}, {21, 28, 35})
-        values = [(day % 7 + 1) * 4 if day not in (3, 7) else 0 for day in range(35)]
+        self.assertTrue(all(end <= offset for end, offset, _ in events))
+        self.assertEqual({end for end, offset, _ in events}, {21, 28, 35})
+        values = next(values for end, _, values in events if end == 35)
         audit = mean_audit(values)
         self.assertLessEqual(abs(Decimal(response.json()["predicciones"][0]["valor_metrica"]) - audit["mae"]), Decimal(".000001"))

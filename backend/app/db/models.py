@@ -49,6 +49,12 @@ class Restaurante(Base):
     alertas: Mapped[list["Alerta"]] = relationship(back_populates="restaurante")
 
 
+class DiaOperativo(Base):
+    __tablename__ = 'dia_operativo'
+    id_restaurante: Mapped[int] = mapped_column(ForeignKey('restaurante.id_restaurante', ondelete='RESTRICT', onupdate='RESTRICT'), primary_key=True)
+    fecha: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
 class Usuario(Base):
     __tablename__ = "usuario"
 

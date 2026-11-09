@@ -56,7 +56,7 @@ button:hover:not(:disabled) {
 }
 button:disabled {
   opacity:.5;
-  cursor:wait
+  cursor:not-allowed
 }
 button:focus-visible,a:focus-visible {
   outline:3px solid #83b39a;
@@ -1732,6 +1732,17 @@ strong {
 .forecast-product p { margin:0; display:flex; align-items:baseline; gap:8px; color:#315f87 }
 .forecast-product strong { font-size:32px; line-height:1; font-variant-numeric:tabular-nums }
 .forecast-product span { font-size:12px; color:#64766d }
+.forecast-product-history { margin-top:-36px }
+.forecast-product-history summary { display:flex; align-items:center; justify-content:center; margin-left:auto; width:28px; height:28px; border-radius:7px; cursor:pointer; list-style:none; color:#527765 }
+.forecast-product-history summary::-webkit-details-marker { display:none }
+.forecast-product-history summary span { font-size:20px; color:inherit; line-height:1 }
+.forecast-product-history[open] summary span { transform:rotate(180deg) }
+.forecast-product-history summary:hover { background:#edf4ef }
+.forecast-product-history > div { border-top:1px solid #e2eae5; margin-top:8px; padding-top:10px; font-size:12px; color:#52665a }
+.forecast-product-history > div strong { font-size:12px; line-height:1.4 }
+.forecast-product-history small { display:block; margin-top:3px; color:#64766d }
+.forecast-product-history ul { margin:8px 0; padding-left:17px }
+.forecast-product-history > div p { display:block; margin:4px 0; font-size:12px; color:#52665a }
 .forecast-shopping { padding:0; margin:0; list-style:none; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px }
 .forecast-shopping li { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px 18px; background:#fff; border:1px solid #efdfd0; border-radius:12px; min-width:0 }
 .forecast-shopping li > div { display:flex; flex-direction:column; gap:4px; min-width:0 }
@@ -1943,3 +1954,9 @@ strong {
 .shortage-info summary::-webkit-details-marker { display: none; }
 .shortage-info small { display: none; position: absolute; z-index: 2; right: 0; top: 100%; min-width: 190px; padding: .5rem; background: #fff; color: #392d29; border: 1px solid #ddd; border-radius: .4rem; box-shadow: 0 3px 10px #0002; }
 .shortage-info:hover small, .shortage-info[open] small, .shortage-info:focus-within small { display: block; }
+.work-status { margin: 0 16px 12px; display: grid; gap: 4px }
+.work-status button { width: 100%; text-align: left }
+.work-status small { font-size: 12px }
+.courier-chart { display:flex; align-items:end; gap:10px; overflow-x:auto; margin-top:16px }
+.courier-chart > div { flex:1; min-width:75px; display:flex; flex-direction:column; align-items:center; gap:4px; font-size:11px }
+.courier-bar { width:26px; background:#70a37b; border-radius:4px 4px 0 0 }

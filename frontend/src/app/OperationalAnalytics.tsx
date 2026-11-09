@@ -46,7 +46,7 @@ export function OperationalDetails({ data, onDate, onOpen }: { data: Operational
         {data.aviso_stock && <p className="operational-stock-note">{data.aviso_stock}</p>}
         {!data.alertas.length ? <p className="operational-positive">¡Todo en orden! No detectamos alertas con los datos disponibles.</p> :
           <ul>{data.alertas.map((alert) => <li key={alert.clave} className={`operational-alert operational-alert--${alert.tipo}`}>
-            <span className="operational-alert-icon" aria-hidden="true">⚠</span><div><strong>{alert.tipo === 'stock' ? 'Revisá las compras' : alert.tipo === 'entrega' ? 'Una entrega tardó más' : 'Un pedido de importe alto'}</strong>
+            <span className="operational-alert-icon" aria-hidden="true">⚠</span><div><strong>{alert.tipo === 'stock' ? 'Revisá las compras' : alert.tipo === 'entrega' ? 'Una entrega tardó más' : alert.tipo === 'demanda' ? 'Menos pedidos de lo habitual' : 'Un pedido de importe alto'}</strong>
               <p>{alert.mensaje}</p>{alert.id_pedido !== null && <button className="operational-open" onClick={() => onOpen?.(alert.id_pedido!)}>Ver pedido #{alert.id_pedido} →</button>}</div></li>)}</ul>}
         {data.total_alertas > data.alertas.length && <p className="operational-muted">Mostramos las {data.alertas.length} alertas prioritarias de {data.total_alertas}. Los avisos también aparecen junto a cada pedido y entrega.</p>}
         <p className="operational-footnote">El stock es el disponible ahora. Las ventas se cuentan por fecha del pedido y los tiempos por fecha de entrega.</p>

@@ -52,7 +52,7 @@ class AuthMigrationTests(unittest.TestCase):
 
     def test_technical_metadata_is_separate_and_fk_resolves(self):
         self.assertEqual(set(AuthBase.metadata.tables), {"auth_estado_acceso", "auth_sesion"})
-        self.assertEqual(len(Base.metadata.tables), 15)
+        self.assertEqual(len(Base.metadata.tables), 16)
         for table in AuthBase.metadata.sorted_tables:
             self.assertIn("CREATE TABLE", str(CreateTable(table).compile(dialect=dialect())))
         fk = next(iter(AuthBase.metadata.tables["auth_sesion"].foreign_keys))

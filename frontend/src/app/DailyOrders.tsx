@@ -9,12 +9,13 @@ import PriorityExplanation from './PriorityExplanation';
 import { apiKey, queryClient } from '../services/queryCache';
 
 type CardProps = { row: OperatingOrder; couriers: Courier[]; busy: boolean;
+  abierto: boolean;
   confirmedState?: string;
   onOpen: (id: number) => void; onState: (row: OperatingOrder, state: string) => void;
   onReject: (row: OperatingOrder) => void; onAssign: (row: OperatingOrder, courier: number, distance?: string) => void;
   onDelivery: (row: OperatingOrder, state: string) => void; onDistance: (row: OperatingOrder, distance: string) => void };
 
-export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, onState, onReject, onAssign, onDistance }: CardProps) {
+export function DailyOrderCard({ row, couriers, busy, abierto, confirmedState, onOpen, onState, onReject, onAssign, onDistance }: CardProps) {
   const [courier, setCourier] = useState('');
   const [distance, setDistance] = useState('');
   const validCourier = couriers.some((c) => c.id_repartidor === Number(courier));
@@ -32,15 +33,16 @@ export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, on
       <summary>Modificar distancia</summary><form onSubmit={(event) => { event.preventDefault();
         const value = new FormData(event.currentTarget).get('distancia'); if (typeof value === 'string') onDistance(row, value);
       }}><label htmlFor={`order-distance-${row.id_pedido}`}>Distancia de entrega (km)</label><div>
-        <input id={`order-distance-${row.id_pedido}`} name="distancia" type="number" min="0" max="5" step="0.001" required
+        <input id={`order-distance-${row.id_pedido}`} name="distancia" type="number" min="0" max="10" step="0.001" required
           key={`${row.id_pedido}:${row.distancia_km}`} defaultValue={row.distancia_km ?? ''} disabled={busy}/>
         <button disabled={busy}>Guardar distancia</button></div></form></details>}
     <div className="daily-order-actions">
-      {row.estado === 'Nuevo' && <><button className="primary-button" disabled={busy} onClick={() => onState(row, 'En preparación')}>Confirmar pedido</button>
+      {row.estado === 'Nuevo' && <><button className="primary-button" disabled={busy || !abierto || !couriers.length} onClick={() => onState(row, 'En preparación')}>Confirmar pedido</button>
         <button className="order-reject" disabled={busy} onClick={() => onReject(row)}>Rechazar</button></>}
       {row.estado === 'En preparación' && <button className="primary-button" disabled={busy} onClick={() => onState(row, 'Listo')}>Marcar como listo</button>}
       <button className="daily-order-detail" onClick={() => onOpen(row.id_pedido)}>Ver detalle</button>
     </div>
+    {row.estado === 'Nuevo' && (!abierto || !couriers.length) && <p className="daily-order-hint">{!abierto ? 'El restaurante está cerrado.' : 'No hay repartidores disponibles para confirmar el pedido.'}</p>}
     {row.estado === 'Listo' && <form className="daily-order-dispatch" onSubmit={(event) => {
       event.preventDefault(); if (validCourier) onAssign(row, Number(courier), row.distancia_km === null ? distance : undefined);
     }}><label htmlFor={`dispatch-courier-${row.id_pedido}`}>Repartidor disponible</label>
@@ -49,7 +51,7 @@ export function DailyOrderCard({ row, couriers, busy, confirmedState, onOpen, on
         {couriers.map((c) => <option key={c.id_repartidor} value={c.id_repartidor}>{c.nombre}</option>)}</select>
         <button className="primary-button" disabled={busy || !validCourier}>Enviar a entrega</button></div>
       {row.distancia_km === null && <><label htmlFor={`dispatch-distance-${row.id_pedido}`}>Distancia de entrega (km)</label>
-        <input id={`dispatch-distance-${row.id_pedido}`} type="number" min="0" max="5" step="0.001" required value={distance}
+        <input id={`dispatch-distance-${row.id_pedido}`} type="number" min="0" max="10" step="0.001" required value={distance}
           disabled={busy} onChange={(event) => setDistance(event.target.value)}/>
         <p className="daily-order-hint">Este registro no tiene una distancia válida; ingresá el dato real para calcular el envío.</p></>}
       {!couriers.length && <p className="daily-order-hint">No hay repartidores disponibles en este momento.</p>}
@@ -65,7 +67,7 @@ type ViewProps = { data: OperatingDay; busy: boolean; onOpen: (id:number) => voi
 
 export function DailyOrdersView({data, busy, pending = {}, onPage, ...actions}: ViewProps) {
   const cards = (rows: OperatingOrder[]) => <div className="daily-orders-grid">{rows.map((row) => <DailyOrderCard key={row.id_pedido}
-    row={row} couriers={data.repartidores.filter(c => c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa)} busy={busy || Boolean(pending[row.id_pedido])}
+    row={row} abierto={data.abierto} couriers={data.repartidores.filter(c => c.activo && c.estado_disponibilidad === 'Disponible' && !c.entrega_activa)} busy={busy || Boolean(pending[row.id_pedido])}
     confirmedState={pending[row.id_pedido]?.state} {...actions}/>)}</div>;
   return <div className="daily-orders-board" aria-busy={busy}>
     <div className="daily-orders-caption"><div><h3>Pedidos del día</h3><p>{data.fecha_operativa ? `Día operativo: ${formatCalendarDate(data.fecha_operativa)}` : 'Sin pedidos registrados'}</p>
@@ -144,7 +146,6 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
     {error && <p role="alert" className="auth-error">{error} <button disabled={busy} onClick={() => void load().then(() => setError('')).catch(failed)}>Actualizar</button></p>}
     {busy && <p role="status" className="daily-orders-saving">Guardando y actualizando pedidos…</p>}
     <button disabled={busy || !data?.listos.length} onClick={() => { setBusy(true); setError(''); void operationRequest(`restaurantes/${restaurant}/entregas/asignar`, undefined, undefined, 'POST').then(load).catch(failed).finally(() => setBusy(false)); }}>Asignar automáticamente</button>
-    <p className="muted">Primero los pedidos de mayor prioridad y los repartidores disponibles con más entregas exitosas. Sin antecedentes se considera 0%; los empates se resuelven por nombre.</p>
     {data ? <DailyOrdersView data={data} busy={busy} pending={pending} onOpen={onOpen} onState={state} onReject={setRejecting}
       onAssign={assign} onDelivery={delivery} onDistance={distance} onPage={setOffset}/> : !error && <p role="status">Cargando los pedidos del día…</p>}
     {rejecting && <Dialog title={`¿Rechazar pedido #${rejecting.id_pedido}?`} busy={busy} onClose={() => setRejecting(null)}>

@@ -40,7 +40,7 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
 }
 export function Status({ value }: { value: string }) {
   const tone = ['Entregado', 'Listo', 'Disponible', 'Activa'].includes(value) ? 'success'
-    : ['No entregado', 'Cancelado', 'No disponible', 'Inactiva'].includes(value) ? 'danger' : ['En preparación', 'Ocupado'].includes(value) ? 'warning' : 'neutral';
+    : ['No entregado', 'Cancelado', 'No disponible', 'Inactiva'].includes(value) ? 'danger' : ['En preparación'].includes(value) ? 'warning' : 'neutral';
   return <span className={`status-badge status-badge--${tone}`}><i />{value}</span>;
 }
 export function FoodPhoto({ name, hero = false, src }: { name: string; hero?: boolean; src?: string | null }) {
