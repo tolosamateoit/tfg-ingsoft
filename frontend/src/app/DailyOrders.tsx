@@ -113,7 +113,7 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
   useEffect(() => {
     if (data && offset > 0 && offset >= data.total_finalizados) setOffset(0);
   }, [data, offset]);
-  useEffect(() => { if (query.error) setError(query.error.message); }, [query.error]);
+  useEffect(() => { if (query.error && !assigning && !error) setError(query.error.message); }, [query.error, assigning]);
   useEffect(() => {
     const revision = queryClient.getQueryState(apiKey(path))?.dataUpdateCount ?? 0;
     setPending(current => Object.fromEntries(Object.entries(current).filter(([, row]) => row.revision >= revision)));
@@ -149,11 +149,21 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
     if (locked.current || !data?.listos.length) return;
     locked.current = true; setBusy(true); setAssigning(true); setError('');
     try {
-      await operationRequest(`restaurantes/${restaurant}/entregas/asignar`, undefined, undefined, 'POST');
-      await load();
+      await operationRequest(`restaurantes/${restaurant}/entregas/asignar`, undefined, undefined, 'POST', 60000);
     } catch (failure) {
-      failed(failure);
+      if (failure instanceof Error && failure.name === 'TimeoutError')
+        setError('La asignación está tardando más de lo esperado. Actualizá los pedidos para comprobar el resultado.');
+      else failed(failure);
       try { await load(); } catch { /* Conserva el aviso y la última lectura disponible. */ }
+      locked.current = false; setBusy(false); setAssigning(false);
+      return;
+    }
+    try {
+      await load();
+      setError('');
+    } catch (failure) {
+      if (failure instanceof OrderError && failure.status === 401) onSessionExpired();
+      else setError('La asignación se completó, pero no se pudo actualizar la lista. Volvé a intentar.');
     } finally {
       locked.current = false; setBusy(false); setAssigning(false);
     }
@@ -164,7 +174,8 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
     <button className="daily-orders-assign" aria-busy={assigning} disabled={busy || !data?.listos.length} onClick={() => void assignAutomatically()}>
       {assigning && <span className="loading-ring daily-orders-assignment-spinner" aria-hidden="true"/>}
       {assigning ? 'Asignando repartidores…' : 'Asignar automáticamente'}</button>
-    <small className="daily-orders-assignment-note">Los pedidos se asignan por orden de prioridad, según el tiempo de entrega promedio de cada repartidor. En caso de empate se desempata alfabéticamente.</small>
+    <small className="daily-orders-assignment-note">Los pedidos se asignan por orden de prioridad, según el tiempo de entrega promedio de cada repartidor. El repartidor con menor tiempo de entrega se asigna al pedido de prioridad 1, y así sucesivamente. 
+                                                    En caso de empate se desempata alfabéticamente.</small>
     {data ? <DailyOrdersView data={data} busy={busy} pending={pending} onOpen={onOpen} onState={state} onReject={setRejecting}
       onAssign={assign} onDelivery={delivery} onDistance={distance} onPage={setOffset}/> : !error && <p role="status">Cargando los pedidos del día…</p>}
     {rejecting && <Dialog title={`¿Rechazar pedido #${rejecting.id_pedido}?`} busy={busy} onClose={() => setRejecting(null)}>
