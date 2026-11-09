@@ -1,8 +1,6 @@
-﻿"""Indicadores operativos y anomalías de consulta; sin escrituras ni cambios de estado.
+﻿"""Operational indicators and read-only anomaly analysis.
 
-El tablero utiliza hasta 30 días operativos anteriores para comparar tiempos
-por estado e importes con el percentil 95. Los avisos existentes de otras
-vistas conservan sus criterios históricos. No se modifican estados ni pedidos.
+State-delay alerts use the selected-day averages shown in the dashboard. Delivery alerts keep the courier history reference.
 """
 from collections import defaultdict
 from dataclasses import dataclass
@@ -189,6 +187,40 @@ def state_durations(db, orders, now):
     return completed, current
 
 
+def state_delay_analysis(orders, spans, current, now):
+    """Usa como referencia por estado el mismo promedio que ve el propietario."""
+    daily_durations = {state: [] for state in ORDER_STATES}
+    for order in orders:
+        for state, durations in spans.get(order.id_pedido, {}).items():
+            if durations:
+                daily_durations[state].append(sum(
+                    (Decimal(str((finish - begin).total_seconds())) / 60 for begin, finish in durations),
+                    Decimal(0)))
+    averages = {state: sum(values, Decimal(0)) / len(values) if values else None
+                for state, values in daily_durations.items()}
+    delays = defaultdict(list)
+    for order in orders:
+        for state in ORDER_STATES:
+            durations = [Decimal(str((finish - begin).total_seconds())) / 60
+                         for begin, finish in spans.get(order.id_pedido, {}).get(state, [])]
+            ongoing = current.get(order.id_pedido)
+            if ongoing and ongoing[0] == state:
+                durations.append(Decimal(str((now - ongoing[1]).total_seconds())) / 60)
+            average = averages[state]
+            habitual = rounded(average) if average is not None else None
+            total = sum(durations, Decimal(0))
+            if durations and habitual is not None and total > habitual * Decimal('1.5'):
+                delays[order.id_pedido].append(StateDelay(estado=state, minutos=rounded(total),
+                                                           habitual=rounded(habitual)))
+    return daily_durations, averages, delays
+
+
+def _state_delay_message(order_id, delay):
+    return (f"Alerta: pedido #{order_id} demorado. "
+            f"Lleva {quantity_text(delay.minutos)} minutos; el promedio para el estado {delay.estado} "
+            f"es {quantity_text(delay.habitual)} minutos.")
+
+
 @dataclass(frozen=True)
 class DeliverySample:
     order_id: int
@@ -329,8 +361,27 @@ def owner_order_warnings(db, user, order_ids, *, reference_day=None, target_orde
                and order.id_restaurante == user.id_restaurante]
     if targets:
         amounts = amount_alerts_for_orders(db, user.id_restaurante, targets)
-    return {oid: dict(advertencia_importe=amounts[oid].mensaje if oid in amounts else None,
-                      advertencia_entrega=delays[oid].mensaje if oid in delays else None) for oid in order_ids}
+    state_warnings = {}
+    active_targets = [order for order in targets if local_day(order.fecha_hora) == day
+                      and order.estado in ORDER_STATES]
+    if active_targets:
+        start, end = operational_day_bounds(day)
+        day_orders = db.scalars(select(Pedido).where(Pedido.id_restaurante == user.id_restaurante,
+            Pedido.fecha_hora >= start, Pedido.fecha_hora < end)).all()
+        now = as_utc(db.scalar(select(func.now())))
+        spans, current = state_durations(db, day_orders, now)
+        _, _, day_delays = state_delay_analysis(day_orders, spans, current, now)
+        for order in active_targets:
+            ongoing = current.get(order.id_pedido)
+            if ongoing and ongoing[0] == order.estado:
+                delay = next((item for item in day_delays.get(order.id_pedido, [])
+                              if item.estado == order.estado), None)
+                if delay:
+                    state_warnings[order.id_pedido] = _state_delay_message(order.id_pedido, delay)
+    return {oid: {"advertencia_importe": amounts[oid].mensaje if oid in amounts else None,
+                   "advertencia_entrega": delays[oid].mensaje if oid in delays else None,
+                   **({"advertencia_demora_estado": state_warnings[oid]} if oid in state_warnings else {})}
+            for oid in order_ids}
 
 
 def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected: date | None = None):
@@ -354,26 +405,9 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
         raise HTTPException(422, 'La fecha elegida es anterior al historial disponible.')
     daily = [o for o in orders if start <= as_utc(o.fecha_hora) < end]
     operational_days = operating_days(db, restaurant, first, target)
-    reference_days = set([value for value in operational_days if value < target][-30:])
-    historical = [order for order in orders if local_day(order.fecha_hora) in reference_days]
     now = as_utc(db.scalar(select(func.now())))
-    spans, current = state_durations(db, [*historical, *daily], now)
-    daily_durations, typical_durations = {}, {}
-    for state in ORDER_STATES:
-        selected_values = []
-        baseline_values = []
-        for order in daily:
-            durations = [Decimal(str((finish - begin).total_seconds())) / 60
-                         for begin, finish in spans.get(order.id_pedido, {}).get(state, [])]
-            if durations:
-                selected_values.append(sum(durations, Decimal(0)))
-        for order in historical:
-            durations = [Decimal(str((finish - begin).total_seconds())) / 60
-                         for begin, finish in spans.get(order.id_pedido, {}).get(state, []) if finish < start]
-            if durations:
-                baseline_values.append(sum(durations, Decimal(0)))
-        daily_durations[state] = selected_values
-        typical_durations[state] = (sum(baseline_values, Decimal(0)) / len(baseline_values)) if baseline_values else None
+    spans, current = state_durations(db, daily, now)
+    daily_durations, _, state_delays = state_delay_analysis(daily, spans, current, now)
     sold = [o for o in daily if o.estado == 'Entregado']
     sales = sum((o.importe_total for o in sold), Decimal(0))
     completed = [r for r in samples if start <= r.ended < end]
@@ -411,18 +445,7 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
     result.alertas = []
     result.alertas.extend(amount_alerts_for_orders(db, restaurant, daily).values())
     for order in daily:
-        detected = []
-        for state in ORDER_STATES:
-            typical = typical_durations[state]
-            if typical is None:
-                continue
-            durations = [Decimal(str((finish - begin).total_seconds())) / 60
-                         for begin, finish in spans.get(order.id_pedido, {}).get(state, [])]
-            if order.id_pedido in current and current[order.id_pedido][0] == state:
-                durations.append(Decimal(str((now - current[order.id_pedido][1]).total_seconds())) / 60)
-            total = sum(durations, Decimal(0))
-            if durations and total > typical * Decimal('1.5'):
-                detected.append(StateDelay(estado=state, minutos=rounded(total), habitual=rounded(typical)))
+        detected = state_delays.get(order.id_pedido, [])
         if detected:
             result.alertas.append(OperationalAlert(clave=f'demoras:{order.id_pedido}', tipo='demora',
                 id_pedido=order.id_pedido, observado=max(row.minutos for row in detected), demoras=detected,

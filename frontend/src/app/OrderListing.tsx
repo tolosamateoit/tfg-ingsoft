@@ -18,7 +18,7 @@ export function OrderTable({page,restaurant,deliveries=false,onOpen}: Pick<Props
             <td>#{row.id_pedido}<WarningBadge message={row.advertencia_importe} label="Importe inusual"
               title="Alerta: pedido con importe inusualmente elevado"/></td><td>{formatDateTime(row.fecha_hora)}</td>
             <td>{row.resumen_productos || 'Sin productos registrados'}{restaurant === null && <p className="muted">{displayText(row.restaurante)}</p>}</td>
-            <td>{formatMoney(row.importe_total)}</td><td><Status value={row.estado}/></td>
+            <td>{formatMoney(row.importe_total)}</td><td><Status value={row.estado}/><WarningBadge message={row.advertencia_demora_estado} label="Pedido demorado"/></td>
             <td>{row.repartidor ? displayText(row.repartidor) : 'Sin asignar'}</td>
             {deliveries && <td>{row.id_entrega !== null ? <>#{row.id_entrega} · {row.estado_entrega}<WarningBadge message={row.advertencia_entrega}/></> : 'Sin asignar'}</td>}
             <td><button onClick={() => onOpen(row.id_pedido)}>{deliveries ? 'Ver seguimiento' : 'Ver detalle'} #{row.id_pedido}</button></td>

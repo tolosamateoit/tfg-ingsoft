@@ -72,6 +72,7 @@ class OrderSummary(BaseModel):
     estado_entrega: str | None = None
     advertencia_importe: str | None = None
     advertencia_entrega: str | None = None
+    advertencia_demora_estado: str | None = None
 
     @field_serializer("importe_total")
     def money_as_text(self, value: Decimal) -> str:

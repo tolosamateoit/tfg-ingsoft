@@ -22,7 +22,8 @@ export function DailyOrderCard({ row, couriers, busy, abierto, confirmedState, o
   return <article className={`daily-order${row.prioridad ? ' daily-order--active' : ''}`}>
     <header><div className="daily-order-title">{row.prioridad && <span className="daily-order-rank">Prioridad <strong>{row.prioridad.posicion}</strong></span>}
       <h4>Pedido #{row.id_pedido}</h4></div><div className="daily-order-state"><WarningBadge message={row.advertencia_importe}
-        label="Importe inusual" title="Alerta: pedido con importe inusualmente elevado"/><Status value={confirmedState ?? row.estado}/></div></header>
+        label="Importe inusual" title="Alerta: pedido con importe inusualmente elevado"/><Status value={confirmedState ?? row.estado}/>
+        <WarningBadge message={row.advertencia_demora_estado} label="Pedido demorado"/></div></header>
     {confirmedState && <p role="status">Cambio guardado. Actualizando pedido…</p>}
     <p className="daily-order-time">{formatDateTime(row.fecha_hora)}</p>
     <p className="daily-order-products">{row.resumen_productos || 'Sin productos registrados'}</p>

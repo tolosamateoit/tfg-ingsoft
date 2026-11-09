@@ -8,7 +8,7 @@ export type OrderSummary = {
   fecha_hora: string; estado: string; importe_total: string; medio_pago: string; estado_pago: string; estado_desde: string;
   resumen_productos: string; id_entrega: number | null; id_repartidor: number | null;
   repartidor: string | null; estado_entrega: string | null;
-  advertencia_importe: string | null; advertencia_entrega: string | null;
+  advertencia_importe: string | null; advertencia_entrega: string | null; advertencia_demora_estado: string | null;
 };
 export type Order = OrderSummary & {
   direccion_entrega: string; referencia_local: string | null; zona_entrega: string | null; distancia_km: string | null;
