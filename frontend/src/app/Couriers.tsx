@@ -1,6 +1,5 @@
 import { useApiQuery } from '../services/useApiQuery';
 import CourierPerformance from './CourierPerformance';
-import AccountRecovery from './AccountRecovery';
 import { formatDateTime } from '../services/format';
 import { Dialog, displayText, Status } from './ui';
 import { useEffect, useState } from 'react';
@@ -81,7 +80,6 @@ export default function Couriers({ restaurant, owner = false, onSessionExpired }
         <h3>{displayText(row.nombre)}</h3><p>{row.activo ? 'Cuenta activa' : 'Cuenta inactiva'}{row.zona ? ` · Zona: ${row.zona}` : ''}</p>
         <p><Status value={row.estado_disponibilidad}/></p><p>Último cambio: {row.ultimo_cambio ? formatDateTime(row.ultimo_cambio) : 'Sin cambios registrados'}</p>
         {owner && restaurant !== null && <details><summary>Ver desempeño</summary><CourierPerformance path={`restaurantes/${restaurant}/repartidores/${row.id_repartidor}/desempeno`} onSessionExpired={onSessionExpired}/></details>}
-        {owner && row.activo && restaurant !== null && <AccountRecovery path={`restaurantes/${restaurant}/repartidores/${row.id_repartidor}/compromiso`}/>}
         {restaurant === null && <><label htmlFor={`courier-${row.id_repartidor}`}>Disponibilidad de {displayText(row.nombre)}</label>
         <select id={`courier-${row.id_repartidor}`} disabled={busy || !row.activo} value={selected[row.id_repartidor] ?? row.estado_disponibilidad}
           onChange={(event) => setSelected({ ...selected, [row.id_repartidor]: event.target.value })}>
