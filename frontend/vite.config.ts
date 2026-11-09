@@ -3,12 +3,8 @@ import react from '@vitejs/plugin-react';
 import { localAccess } from './local-access';
 
 // Proxy exclusivo del entorno local: el navegador utiliza un único origen.
-const apiTarget = process.env.API_PROXY_TARGET || 'http://127.0.0.1:8001';
 const proxy = {
-  '/api': {
-    target: apiTarget,
-    changeOrigin: true,
-  },
+  '/api': 'http://127.0.0.1:8001',
 };
 
 export default defineConfig(({ command, mode }) => {
