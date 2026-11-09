@@ -1,13 +1,14 @@
 """Gestión de personal del restaurante del propietario autenticado."""
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from app.auth.dependencies import DB, require_restaurant
 from app.auth.security import digest, hash_password
 from app.auth.service import lock_email
 from app.couriers.schemas import CourierInput
 from app.db.models import Usuario
+from app.auth.models import Sesion
 
 router = APIRouter(tags=['Personal'])
 Owner = Annotated[Usuario, Depends(require_restaurant('propietario'))]
@@ -43,5 +44,6 @@ def deactivate_staff(id_restaurante: PositiveId, id_usuario: PositiveId, db: DB,
     if account is None:
         raise HTTPException(404, 'Personal no disponible.')
     account.activo = False
+    db.execute(delete(Sesion).where(Sesion.id_usuario == account.id_usuario))
     db.commit()
     return {'activo': False}

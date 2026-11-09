@@ -11,10 +11,11 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 PASSWORD_HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, type=Type.ID)
 # Lista local pequeña, deliberadamente documentada; no es una base completa de filtraciones.
 COMMON_PASSWORDS = frozenset({
+    'hola123', '123456', '123456789', 'password', 'contraseña', 'contrasena',
     "123456789012345", "1234567890123456", "12345678901234567", "123456789012345678",
     "1234567890123456789", "12345678901234567890", "passwordpassword", "password123456789",
     "qwertyuiopasdfgh", "contrasenacontrasena", "contraseñacontraseña",
-})
+} | {char * length for char in '0123456789abcdefghijklmnopqrstuvwxyz' for length in range(15, 21)})
 
 
 def normalize_email(value: str) -> str:
@@ -27,7 +28,7 @@ def normalize_email(value: str) -> str:
 def hash_password(password: str) -> str:
     if not 15 <= len(password) <= 20:
         raise ValueError("La contraseña debe tener entre 15 y 20 caracteres.")
-    if not password.strip() or password.casefold() in COMMON_PASSWORDS or len(set(password)) < 3:
+    if not password.strip() or password.casefold() in COMMON_PASSWORDS:
         raise ValueError("Elegí una contraseña menos común.")
     return PASSWORD_HASHER.hash(password)
 

@@ -143,10 +143,17 @@ class OperationalTests(unittest.TestCase):
         for period in ('dia', 'historial'):
             rows = self.client.get(f'/api/pedidos?periodo={period}').json()['pedidos']
             flagged = next(r for r in rows if r['id_pedido'] == ids[-1])
-            self.assertEqual(flagged['advertencia_importe'], alerts[0]['mensaje'])
+            self.assertIsNotNone(flagged['advertencia_importe'])
             self.assertEqual(flagged['estado'], 'Entregado')
         detail = self.client.get(f'/api/pedidos/{ids[-1]}').json()
-        self.assertEqual(detail['advertencia_importe'], alerts[0]['mensaje'])
+        self.assertIsNotNone(detail['advertencia_importe'])
+        with Session(self.engine) as db:
+            db.get(Pedido, ids[-1]).estado = 'Cancelado'
+            db.commit()
+        archived = self.client.get('/api/pedidos?periodo=historial').json()['pedidos']
+        archived_flag = next(r for r in archived if r['id_pedido'] == ids[-1])
+        self.assertEqual(archived_flag['estado'], 'Cancelado')
+        self.assertIsNotNone(archived_flag['advertencia_importe'])
         with Session(self.engine) as db:
             db.get(Insumo, 1).stock_actual = Decimal(30)
             db.commit()
@@ -171,28 +178,28 @@ class OperationalTests(unittest.TestCase):
             for i in range(10):
                 delivery(db, DAY - timedelta(days=i+1), 30, 1)
                 delivery(db, DAY - timedelta(days=i+1), 60, 3)
-            late = delivery(db, DAY, 58, 1)
+            late = delivery(db, DAY, 75, 1)
             normal = delivery(db, DAY, 58, 3)
             incomplete = delivery(db, DAY, 100, 1, complete=False)
             late_id, normal_id, incomplete_id = late.id_pedido, normal.id_pedido, incomplete.id_pedido
             db.commit()
         data = self.dashboard().json()
         self.assertEqual(data['entregas_con_tiempo'], 2)
-        self.assertEqual(Decimal(data['entrega_minutos']), 58)
+        self.assertEqual(Decimal(data['entrega_minutos']), Decimal('66.5'))
         self.assertEqual(data['entregas_habituales'], 1)
         self.assertEqual(data['entregas_demoradas'], 1)
-        alert = next(r for r in data['alertas'] if r['tipo'] == 'entrega')
+        alert = next(r for r in data['alertas'] if r['tipo'] == 'demora' and r['id_pedido'] == late_id)
         self.assertEqual(alert['id_pedido'], late_id)
-        self.assertIn('58 minutos', alert['mensaje'])
-        self.assertIn('30 minutos', alert['mensaje'])
+        self.assertEqual(Decimal(alert['demoras'][0]['minutos']), 75)
+        self.assertEqual(Decimal(alert['demoras'][0]['habitual']), 45)
         rows = self.client.get('/api/pedidos?periodo=dia').json()['pedidos']
         by_id = {r['id_pedido']: r for r in rows}
-        self.assertEqual(by_id[late_id]['advertencia_entrega'], alert['mensaje'])
+        self.assertIsNotNone(by_id[late_id]['advertencia_entrega'])
         self.assertIsNone(by_id[normal_id]['advertencia_entrega'])
         self.assertIsNone(by_id[incomplete_id]['advertencia_entrega'])
         tracking = self.client.get(f'/api/pedidos/{late_id}/seguimiento')
         self.assertEqual(tracking.status_code, 200, tracking.text)
-        self.assertEqual(tracking.json()['entrega']['advertencia_entrega'], alert['mensaje'])
+        self.assertIsNotNone(tracking.json()['entrega']['advertencia_entrega'])
         self.assertEqual(tracking.json()['entrega']['estado'], 'Entregado')
 
     def test_forecast_stock_is_reused_exactly_without_writes(self):
@@ -209,7 +216,7 @@ class OperationalTests(unittest.TestCase):
         self.assertEqual(Decimal(stock[0]['observado']), expected.insumos[0].faltante)
         self.assertEqual(stock[0]['fecha_pronostico'], str(DAY))
         historical = self.dashboard('2026-10-25').json()
-        self.assertEqual(historical['fecha_stock'], str(DAY))
+        self.assertEqual(historical['fecha_stock'], '2026-10-25')
         with Session(self.engine) as db:
             self.assertEqual(db.get(Insumo, 1).stock_actual, 1)
             self.assertEqual(db.scalar(select(func.count()).select_from(PrediccionDemanda)), 0)
@@ -242,7 +249,7 @@ class OperationalTests(unittest.TestCase):
             db.commit()
         data = self.dashboard().json()
         self.assertEqual(data['total_alertas'], 8)
-        self.assertEqual(len(data['alertas']), 6)
+        self.assertEqual(len(data['alertas']), 8)
 
 
 @unittest.skipUnless(os.environ.get('TFG_TEST_POSTGRES_DSN'), 'Requiere PostgreSQL local descartable')

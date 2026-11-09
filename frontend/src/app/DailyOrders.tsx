@@ -21,7 +21,8 @@ export function DailyOrderCard({ row, couriers, busy, abierto, confirmedState, o
   const validCourier = couriers.some((c) => c.id_repartidor === Number(courier));
   return <article className={`daily-order${row.prioridad ? ' daily-order--active' : ''}`}>
     <header><div className="daily-order-title">{row.prioridad && <span className="daily-order-rank">Prioridad <strong>{row.prioridad.posicion}</strong></span>}
-      <h4>Pedido #{row.id_pedido}<WarningBadge message={row.advertencia_importe}/></h4></div><Status value={confirmedState ?? row.estado}/></header>
+      <h4>Pedido #{row.id_pedido}</h4></div><div className="daily-order-state"><WarningBadge message={row.advertencia_importe}
+        label="Importe inusual" title="Alerta: pedido con importe inusualmente elevado"/><Status value={confirmedState ?? row.estado}/></div></header>
     {confirmedState && <p role="status">Cambio guardado. Actualizando pedido…</p>}
     <p className="daily-order-time">{formatDateTime(row.fecha_hora)}</p>
     <p className="daily-order-products">{row.resumen_productos || 'Sin productos registrados'}</p>
@@ -146,6 +147,7 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
     {error && <p role="alert" className="auth-error">{error} <button disabled={busy} onClick={() => void load().then(() => setError('')).catch(failed)}>Actualizar</button></p>}
     {busy && <p role="status" className="daily-orders-saving">Guardando y actualizando pedidos…</p>}
     <button disabled={busy || !data?.listos.length} onClick={() => { setBusy(true); setError(''); void operationRequest(`restaurantes/${restaurant}/entregas/asignar`, undefined, undefined, 'POST').then(load).catch(failed).finally(() => setBusy(false)); }}>Asignar automáticamente</button>
+    <small className="daily-orders-assignment-note">Los pedidos se asignan por orden de prioridad, según el tiempo de entrega promedio de cada repartidor. En caso de empate se desempata alfabéticamente.</small>
     {data ? <DailyOrdersView data={data} busy={busy} pending={pending} onOpen={onOpen} onState={state} onReject={setRejecting}
       onAssign={assign} onDelivery={delivery} onDistance={distance} onPage={setOffset}/> : !error && <p role="status">Cargando los pedidos del día…</p>}
     {rejecting && <Dialog title={`¿Rechazar pedido #${rejecting.id_pedido}?`} busy={busy} onClose={() => setRejecting(null)}>

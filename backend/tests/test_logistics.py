@@ -242,11 +242,16 @@ class AssignmentTests(unittest.TestCase):
             restaurant.costo_por_km = Decimal("0.20")
             important = add_order(db, importe_total=Decimal("10000"), costo_total=Decimal("100"))
             important_id = important.id_pedido
+            db.get(Usuario, 5).nombre = "Zeta"
+            db.get(Usuario, 9).nombre = "Alfa"
             db.commit()
-        response = self.assign()
+        with patch('app.couriers.performance.performance', side_effect=lambda db, user, courier_id: {
+                1: {'promedio_minutos': 20.0}, 3: {'promedio_minutos': 10.0}}[courier_id]) as metric:
+            response = self.assign()
+            self.assertEqual(metric.call_count, 2)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual([row["id_pedido"] for row in response.json()["entregas"]], [important_id, 1])
-        self.assertEqual([row["id_repartidor"] for row in response.json()["entregas"]], [1, 3])
+        self.assertEqual([row["id_repartidor"] for row in response.json()["entregas"]], [3, 1])
         self.assertEqual(response.json()["pendientes"], 0)
         self.assertEqual(self.assign().json(), {"entregas": [], "pendientes": 0})
         with Session(self.engine) as db:
@@ -259,6 +264,20 @@ class AssignmentTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(Entrega)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialPedido)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(HistorialRepartidor)), 2)
+
+    def test_automatic_assignment_breaks_equal_averages_by_courier_name(self):
+        with Session(self.engine) as db:
+            db.get(Pedido, 1).estado = 'Listo'
+            order = add_order(db, fecha_hora=datetime(2026, 10, 25, tzinfo=UTC))
+            order_id = order.id_pedido
+            db.get(Usuario, 5).nombre = 'Zoe'
+            db.get(Usuario, 9).nombre = 'Ana'
+            db.commit()
+        with patch('app.couriers.performance.performance', return_value={'promedio_minutos': 12.0}):
+            response = self.assign()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([row['id_pedido'] for row in response.json()['entregas']], [order_id, 1])
+        self.assertEqual([row['id_repartidor'] for row in response.json()['entregas']], [3, 1])
 
     def test_no_couriers_keeps_ready_orders_pending_and_permissions_are_enforced(self):
         with Session(self.engine) as db:

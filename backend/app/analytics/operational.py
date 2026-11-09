@@ -1,9 +1,8 @@
 ﻿"""Indicadores operativos y anomalías de consulta; sin escrituras ni cambios de estado.
 
-Reglas internas: mínimo 20 importes positivos de pedidos entregados en días
-anteriores; mínimo 10 entregas previas del mismo repartidor terminadas antes de
-la salida analizada. Ventana retrospectiva: 90 días. Límite superior robusto:
-max(1.75 * mediana, Q3 + 3 * RIC); comparación estricta. No son plazos prometidos.
+El tablero utiliza hasta 30 días operativos anteriores para comparar tiempos
+por estado e importes con el percentil 95. Los avisos existentes de otras
+vistas conservan sus criterios históricos. No se modifican estados ni pedidos.
 """
 from collections import defaultdict
 from dataclasses import dataclass
@@ -33,6 +32,19 @@ class OperationalAlert(BaseModel):
     id_pedido: int | None = None
     id_entrega: int | None = None
     fecha_pronostico: date | None = None
+    demoras: list['StateDelay'] = []
+
+
+class StateDelay(BaseModel):
+    estado: str
+    minutos: Decimal
+    habitual: Decimal
+
+
+class StateAverage(BaseModel):
+    estado: str
+    minutos: Decimal | None = None
+    pedidos: int = 0
 
 
 class SalesDay(BaseModel):
@@ -57,6 +69,7 @@ class OperationalDashboard(BaseModel):
     ticket_promedio: Decimal | None = None
     pedidos_entregados: int = 0
     entrega_minutos: Decimal | None = None
+    tiempos_promedio: list[StateAverage] = []
     entregas_con_tiempo: int = 0
     entregas_habituales: int = 0
     entregas_demoradas: int = 0
@@ -93,6 +106,87 @@ def amount_text(value):
 
 def quantity_text(value):
     return f'{value:,.2f}'.replace(',', '_').replace('.', ',').replace('_', '.').rstrip('0').rstrip(',')
+
+
+ORDER_STATES = ('Nuevo', 'En preparación', 'Listo', 'Asignado', 'En camino')
+
+
+def percentile_95(values):
+    """Rango más cercano: el valor en la posición ceil(0,95 × n)."""
+    if len(values) < 20:
+        return None
+    values = sorted(values)
+    return values[(95 * len(values) + 99) // 100 - 1]
+
+
+def amount_p95_for_day(db, restaurant_id, day):
+    """P95 de ventas entregadas en los 30 días operativos anteriores al pedido."""
+    first_operating = db.scalar(select(func.min(DiaOperativo.fecha)).where(
+        DiaOperativo.id_restaurante == restaurant_id))
+    first_order = db.scalar(select(func.min(Pedido.fecha_hora)).where(
+        Pedido.id_restaurante == restaurant_id))
+    first = min([value for value in (first_operating, local_day(first_order) if first_order else None)
+                 if value is not None], default=day)
+    if day <= first:
+        return None
+    operating = operating_days(db, restaurant_id, first, day - timedelta(days=1))[-30:]
+    if not operating:
+        return None
+    starts = operational_day_bounds(operating[0])[0]
+    end = operational_day_bounds(day)[0]
+    orders = db.scalars(select(Pedido).where(Pedido.id_restaurante == restaurant_id,
+        Pedido.estado == 'Entregado', Pedido.fecha_hora >= starts, Pedido.fecha_hora < end)).all()
+    allowed = set(operating)
+    return percentile_95([order.importe_total for order in orders if local_day(order.fecha_hora) in allowed])
+
+
+def amount_alerts_for_orders(db, restaurant_id, targets):
+    alerts = {}
+    by_day = defaultdict(list)
+    for order in targets:
+        by_day[local_day(order.fecha_hora)].append(order)
+    for day, orders in by_day.items():
+        threshold = amount_p95_for_day(db, restaurant_id, day)
+        if threshold is None:
+            continue
+        for order in orders:
+            if order.importe_total > threshold:
+                alerts[order.id_pedido] = OperationalAlert(clave=f'importe:{order.id_pedido}', tipo='importe',
+                    id_pedido=order.id_pedido, observado=order.importe_total, habitual=threshold,
+                    umbral=threshold, mensaje=f'Importe del pedido: {amount_text(order.importe_total)}. '
+                    f'Referencia histórica (P95): {amount_text(threshold)}.')
+    return alerts
+
+
+def state_durations(db, orders, now):
+    """Duraciones completas por pedido y estado, y estado actual verificable."""
+    if not orders:
+        return {}, {}
+    rows = db.execute(select(HistorialPedido.id_pedido, HistorialPedido.fecha_hora,
+                             HistorialPedido.estado, HistorialPedido.tipo_evento)
+        .where(HistorialPedido.id_pedido.in_([order.id_pedido for order in orders]),
+               HistorialPedido.fecha_hora <= now)
+        .order_by(HistorialPedido.id_pedido, HistorialPedido.fecha_hora, HistorialPedido.id_historial)).all()
+    events = defaultdict(list)
+    for oid, when, state, kind in rows:
+        if kind != 'distancia':
+            events[oid].append((as_utc(when), state))
+    completed, current = {}, {}
+    for order in orders:
+        previous, entered = None, None
+        spans = defaultdict(list)
+        for when, state in events[order.id_pedido]:
+            if when < as_utc(order.fecha_hora):
+                continue
+            if state == previous:
+                continue
+            if previous in ORDER_STATES and entered is not None and when > entered:
+                spans[previous].append((entered, when))
+            previous, entered = state, when
+        completed[order.id_pedido] = spans
+        if previous == order.estado and previous in ORDER_STATES and entered is not None and now > entered:
+            current[order.id_pedido] = (previous, entered)
+    return completed, current
 
 
 @dataclass(frozen=True)
@@ -208,6 +302,7 @@ def owner_order_warnings(db, user, order_ids, *, reference_day=None, target_orde
     if order_ids is None:
         orders, _, amounts, delays, _ = operational_evidence(db, user.id_restaurante, cutoff)
         order_ids = [order.id_pedido for order in orders]
+        target_orders = orders
     else:
         ids = set(order_ids)
         if target_orders is None:
@@ -230,6 +325,10 @@ def owner_order_warnings(db, user, order_ids, *, reference_day=None, target_orde
             samples = delivery_samples(db, user.id_restaurante, cutoff,
                 courier_order_ids=[o.id_pedido for o in targets if o.estado == 'Entregado'])
             amounts, delays, _ = detect_alerts(orders, samples, target_ids=ids)
+    targets = [order for order in (target_orders or []) if order.id_pedido in set(order_ids)
+               and order.id_restaurante == user.id_restaurante]
+    if targets:
+        amounts = amount_alerts_for_orders(db, user.id_restaurante, targets)
     return {oid: dict(advertencia_importe=amounts[oid].mensaje if oid in amounts else None,
                       advertencia_entrega=delays[oid].mensaje if oid in delays else None) for oid in order_ids}
 
@@ -244,13 +343,37 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
     if target > day:
         raise HTTPException(422, 'Elegí una fecha anterior o igual a la fecha operativa.')
     start, end = operational_day_bounds(target)
-    orders, samples, amounts, delays, classified = operational_evidence(db, restaurant, end)
+    orders = db.scalars(select(Pedido).where(Pedido.id_restaurante == restaurant, Pedido.fecha_hora < end)
+                        .order_by(Pedido.fecha_hora, Pedido.id_pedido)).all()
+    samples = delivery_samples(db, restaurant, end)
+    _, _, classified = detect_alerts([], samples)
     first_registered = db.scalar(select(func.min(DiaOperativo.fecha)).where(
         DiaOperativo.id_restaurante == restaurant, DiaOperativo.fecha <= day))
     first = min([local_day(o.fecha_hora) for o in orders] + ([first_registered] if first_registered else []) or [day])
     if target < first:
         raise HTTPException(422, 'La fecha elegida es anterior al historial disponible.')
     daily = [o for o in orders if start <= as_utc(o.fecha_hora) < end]
+    operational_days = operating_days(db, restaurant, first, target)
+    reference_days = set([value for value in operational_days if value < target][-30:])
+    historical = [order for order in orders if local_day(order.fecha_hora) in reference_days]
+    now = as_utc(db.scalar(select(func.now())))
+    spans, current = state_durations(db, [*historical, *daily], now)
+    daily_durations, typical_durations = {}, {}
+    for state in ORDER_STATES:
+        selected_values = []
+        baseline_values = []
+        for order in daily:
+            durations = [Decimal(str((finish - begin).total_seconds())) / 60
+                         for begin, finish in spans.get(order.id_pedido, {}).get(state, [])]
+            if durations:
+                selected_values.append(sum(durations, Decimal(0)))
+        for order in historical:
+            durations = [Decimal(str((finish - begin).total_seconds())) / 60
+                         for begin, finish in spans.get(order.id_pedido, {}).get(state, []) if finish < start]
+            if durations:
+                baseline_values.append(sum(durations, Decimal(0)))
+        daily_durations[state] = selected_values
+        typical_durations[state] = (sum(baseline_values, Decimal(0)) / len(baseline_values)) if baseline_values else None
     sold = [o for o in daily if o.estado == 'Entregado']
     sales = sum((o.importe_total for o in sold), Decimal(0))
     completed = [r for r in samples if start <= r.ended < end]
@@ -260,6 +383,9 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
         entregas_con_tiempo=len(completed), entregas_habituales=sum(classified.get(r.delivery_id) is False for r in completed),
         entregas_demoradas=sum(classified.get(r.delivery_id) is True for r in completed),
         entregas_sin_referencia=sum(r.delivery_id not in classified for r in completed))
+    result.tiempos_promedio = [StateAverage(estado=state, pedidos=len(daily_durations[state]),
+        minutos=rounded(sum(daily_durations[state], Decimal(0)) / len(daily_durations[state]))
+        if daily_durations[state] else None) for state in ORDER_STATES]
     totals = defaultdict(int)
     names = {}
     if sold:
@@ -271,7 +397,7 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
             names[pid] = name
     result.productos = [TopProduct(id_producto=pid, nombre=names[pid], cantidad=total)
                         for pid, total in sorted(totals.items(), key=lambda r: (-r[1], r[0]))[:5]]
-    trend = {target - timedelta(days=i): SalesDay(fecha=target - timedelta(days=i)) for i in reversed(range(7))}
+    trend = {value: SalesDay(fecha=value) for value in operational_days[-7:]}
     for order in orders:
         bucket = trend.get(local_day(order.fecha_hora))
         if bucket:
@@ -282,10 +408,27 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
     for bucket in trend.values():
         bucket.proporcion = max(1, int(bucket.ventas / maximum * 100)) if bucket.ventas and maximum else 0
     result.evolucion = list(trend.values())
-    result.alertas = [amounts[o.id_pedido] for o in daily if o.id_pedido in amounts]
-    result.alertas.extend(delays[r.order_id] for r in completed if r.order_id in delays)
+    result.alertas = []
+    result.alertas.extend(amount_alerts_for_orders(db, restaurant, daily).values())
+    for order in daily:
+        detected = []
+        for state in ORDER_STATES:
+            typical = typical_durations[state]
+            if typical is None:
+                continue
+            durations = [Decimal(str((finish - begin).total_seconds())) / 60
+                         for begin, finish in spans.get(order.id_pedido, {}).get(state, [])]
+            if order.id_pedido in current and current[order.id_pedido][0] == state:
+                durations.append(Decimal(str((now - current[order.id_pedido][1]).total_seconds())) / 60)
+            total = sum(durations, Decimal(0))
+            if durations and total > typical * Decimal('1.5'):
+                detected.append(StateDelay(estado=state, minutos=rounded(total), habitual=rounded(typical)))
+        if detected:
+            result.alertas.append(OperationalAlert(clave=f'demoras:{order.id_pedido}', tipo='demora',
+                id_pedido=order.id_pedido, observado=max(row.minutos for row in detected), demoras=detected,
+                mensaje=f'Pedido #{order.id_pedido} — Demoras detectadas'))
     # La misma referencia robusta de las alertas se aplica a conteos por día abierto.
-    open_days = operating_days(db, restaurant, target - timedelta(days=90), target)
+    open_days = [value for value in operational_days if value >= target - timedelta(days=90)]
     if target in open_days:
         daily_counts = defaultdict(int)
         for order in orders:
@@ -303,18 +446,17 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
     # Mismo servicio, fecha, unidades enteras y recetas que Previsión de demanda.
     # El stock es actual: nunca se presenta como una reconstrucción de fechas pasadas.
     from app.analytics.forecast import day_forecast
-    forecast = day_forecast(db, restaurant, day, reference_day=day, history_orders=orders if target == day else None)
+    forecast = day_forecast(db, restaurant, target, reference_day=target, history_orders=orders)
     result.fecha_stock = forecast.fecha_seleccionada
     result.aviso_stock = forecast.aviso
     for row in forecast.insumos:
         if row.faltante > 0:
             unit = 'un.' if row.unidad.lower() in {'unidad', 'unidades', 'u'} else 'L' if row.unidad.lower() == 'l' else row.unidad
-            result.alertas.append(OperationalAlert(clave=f'stock:{day}:{row.id_insumo}', tipo='stock',
+            result.alertas.append(OperationalAlert(clave=f'stock:{target}:{row.id_insumo}', tipo='stock',
                 observado=row.faltante, habitual=row.stock_actual, fecha_pronostico=forecast.fecha_seleccionada,
-                mensaje=f'Podrían faltar {quantity_text(row.faltante)} {unit} de {row.nombre} para lo previsto el {day:%d/%m}. '
+                mensaje=f'Podrían faltar {quantity_text(row.faltante)} {unit} de {row.nombre} para lo previsto el {target:%d/%m}. '
                         f'Compra sugerida: {quantity_text(row.reposicion_sugerida)} {unit}.'))
-    rank = {'stock': 0, 'entrega': 1, 'importe': 2, 'demanda': 3}
+    rank = {'stock': 0, 'demora': 1, 'importe': 2, 'demanda': 3}
     result.alertas.sort(key=lambda a: (rank[a.tipo], -(a.observado / a.habitual if a.habitual and a.habitual > 0 else a.observado), a.clave))
     result.total_alertas = len(result.alertas)
-    result.alertas = result.alertas[:6]
     return result

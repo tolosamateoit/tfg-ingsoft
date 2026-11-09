@@ -26,11 +26,11 @@ const render = (component, props) => renderToStaticMarkup(React.createElement(Qu
   {client:queryClient}, React.createElement(component, props)));
 const noop = () => {};
 
-test('el menú del cliente muestra y bloquea productos sin stock', () => {
+test('el menú del cliente permite pedir productos publicados sin revelar el stock', () => {
   const product = {id_producto:1, nombre:'Bebida', precio:'10', disponible_stock:false};
   const unavailable = render(CustomerProductCard, {product, busy:false, quantity:0, onAdd:noop});
-  assert.match(unavailable, /No disponible/);
-  assert.match(unavailable, /<button disabled=""/);
+  assert.doesNotMatch(unavailable, /No disponible/);
+  assert.doesNotMatch(unavailable, /<button disabled=""/);
   const available = render(CustomerProductCard, {product:{...product, disponible_stock:true}, busy:false, quantity:0, onAdd:noop});
   assert.doesNotMatch(available, /No disponible|disabled=""/);
 });

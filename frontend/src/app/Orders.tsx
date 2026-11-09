@@ -16,8 +16,7 @@ type Props = { restaurant: number | null; view?: 'list' | 'create' | 'menu' | 'd
 export function CustomerProductCard({product, busy, quantity, onAdd}: {product: MenuItem; busy: boolean; quantity: number; onAdd: () => void}) {
   return <article className="product-card catalog-product"><FoodPhoto name={product.nombre} src={product.imagen_url}/>
     <h3>{product.nombre}</h3><p>{product.descripcion || 'Sin descripción disponible.'}</p><strong>{formatMoney(product.precio)}</strong>
-    {!product.disponible_stock && <span className="product-state product-state--unavailable">No disponible</span>}
-    <button disabled={busy || !product.disponible_stock || quantity >= 100} onClick={onAdd}>Agregar al carrito</button>
+    <button disabled={busy || quantity >= 100} onClick={onAdd}>Agregar al carrito</button>
   </article>;
 }
 
@@ -51,7 +50,7 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
   const menu = customerMenu.data;
   const queryError = catalog.error?.message ?? places.error?.message ?? customerMenu.error?.message;
   useEffect(() => {
-    const rows = view === 'menu' ? menu?.productos : view === 'create' ? catalog.data : undefined;
+    const rows = view === 'create' ? catalog.data : undefined;
     if (!rows) return;
     setQuantities(current => {
       const unavailable = rows.filter(p => !p.disponible_stock && Number(current[p.id_producto] ?? 0) > 0);
@@ -82,7 +81,7 @@ export default function Orders({ restaurant, view = 'list', initialOrder, onClos
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setNotice('');
-    if ((view === 'menu' ? menu?.productos ?? [] : products).some(p => !p.disponible_stock && Number(quantities[p.id_producto] ?? 0) > 0)) {
+    if (view === 'create' && products.some(p => !p.disponible_stock && Number(quantities[p.id_producto] ?? 0) > 0)) {
       setError('Quitá del pedido los productos que ya no están disponibles.'); return;
     }
     const detalles = (view === 'menu' ? menu?.productos ?? [] : products).filter((p) => Number(quantities[p.id_producto] ?? 0) > 0)

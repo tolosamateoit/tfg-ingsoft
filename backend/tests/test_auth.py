@@ -45,6 +45,11 @@ class PasswordTests(unittest.TestCase):
             with self.subTest(password=password), self.assertRaises(ValueError):
                 hash_password(password)
         self.assertTrue(verify_password(hash_password("  Frase segura 42 "), "  Frase segura 42 "))
+        self.assertTrue(verify_password(hash_password("frasedesolyluna"), "frasedesolyluna"))
+        from app.couriers.schemas import CourierInput
+        data = CourierInput(nombre=' Nombre ', correo=' test@example.invalid ', contrasena='  Frase segura 42 ')
+        self.assertEqual(data.nombre, 'Nombre')
+        self.assertEqual(data.contrasena.get_secret_value(), '  Frase segura 42 ')
 
     def test_email_validation_and_normalization(self):
         self.assertEqual(normalize_email(" U1@Test.Invalid "), "u1@test.invalid")
@@ -307,6 +312,9 @@ class AuthApiTests(unittest.TestCase):
         paths = production_app.openapi()["paths"]
         self.assertEqual(set(paths), {"/api/health", "/api/health/database",
                                      "/api/auth/login", "/api/auth/logout", "/api/auth/me",
+                                     "/api/auth/cambiar-contrasena", "/api/admin/cuentas/{id_usuario}/compromiso",
+                                     "/api/restaurantes/{id_restaurante}/personal/{id_usuario}/compromiso",
+                                     "/api/restaurantes/{id_restaurante}/repartidores/{id_repartidor}/compromiso",
                                      "/api/restaurantes/{id_restaurante}/productos",
                                      "/api/restaurantes/{id_restaurante}/productos/{id_producto}",
                                      "/api/restaurantes/{id_restaurante}/insumos",

@@ -182,7 +182,7 @@ export default function MenuManager({ owner, restaurant, onSessionExpired }: Pro
     <section className="menu-manager" aria-labelledby="menu-title">
       <div className="menu-heading"><div><h2 id="menu-title">Tu carta</h2><p>Productos que salen de tu cocina. Imágenes ilustrativas.</p></div>
         <div className="menu-actions">
-          <button className="primary-button" type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product' }); }}><Icon name="plus" size={17}/>Nuevo producto</button>
+          {owner && <button className="primary-button" type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product' }); }}><Icon name="plus" size={17}/>Nuevo producto</button>}
           <button type="button" disabled={loading || editor !== null} onClick={() => { setNotice(''); void reload(); }}>Actualizar catálogo</button>
         </div>
       </div>
@@ -198,7 +198,7 @@ export default function MenuManager({ owner, restaurant, onSessionExpired }: Pro
           <div className="product-title"><h3>{product.nombre}</h3>{product.activo && !product.disponible_stock ? <details className="shortage-info"><summary className="product-state product-state--unavailable">No disponible</summary><small>{product.insumos_faltantes?.length ? `Faltan insumos: ${product.insumos_faltantes.join(', ')}.` : 'El producto no tiene una receta completa.'}</small></details> : <span className={`product-state ${product.activo ? 'product-state--active' : ''}`}>{product.activo ? 'Activo' : 'Inactivo'}</span>}</div>
           <dl><dt>Precio de venta</dt><dd>{formatMoney(product.precio)}</dd><dt>Costo unitario</dt><dd>{formatMoney(product.costo_unitario)}</dd></dl>
           <div className="menu-actions">
-            <button type="button" disabled={editor !== null || loading} aria-label={`Editar ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product', product }); }}>Editar</button>
+            {owner && <button type="button" disabled={editor !== null || loading} aria-label={`Editar ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'product', product }); }}>Editar</button>}
             {owner && product.activo && <button disabled={busy} onClick={() => void remove(product)}>Eliminar del menú</button>}
             <button type="button" disabled={editor !== null || loading} aria-label={`Receta de ${product.nombre}`} onClick={() => { setNotice(''); setError(''); setEditor({ kind: 'recipe', product }); }}>Receta</button>
           </div>

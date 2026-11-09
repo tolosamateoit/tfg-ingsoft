@@ -50,19 +50,34 @@ test('dashboard React presenta indicadores reales, siete dias y top sin tecnicis
   assert.match(html, /Pedidos del día/);
   assert.match(html, /Ventas del día/);
   assert.match(html, /Ticket promedio/);
+  assert.match(html, /Tiempos promedio/);
+  assert.match(html, /Ventas de los últimos 7 días operativos/);
+  assert.match(html, /En camino/);
   assert.match(html, /58 min/);
   assert.equal((html.match(/class="operational-day"/g) || []).length, 7);
   assert.match(html, /Pizza sintética/);
   assert.doesNotMatch(html, /MAE|percentil|desviación|fórmula|entrenamiento|umbral|RIC/);
 });
 
+test('agrupa varias demoras de un pedido en una sola tarjeta y muestra los tiempos habituales', () => {
+  const alert = {clave:'demoras:125', tipo:'demora', id_pedido:125, id_entrega:null, fecha_pronostico:null,
+    mensaje:'Pedido #125 — Demoras detectadas', demoras:[
+      {estado:'En preparación', minutos:'18', habitual:'10'}, {estado:'Listo', minutos:'9', habitual:'5'},
+    ]};
+  const html = render({...data, alertas:[alert], total_alertas:1});
+  assert.equal((html.match(/operational-alert--demora/g) || []).length, 1);
+  assert.match(html, /Pedido #125 — Demoras detectadas/);
+  assert.match(html, /En preparación: 18 min \(habitual: 10 min\)/);
+  assert.match(html, /Listo: 9 min \(habitual: 5 min\)/);
+});
+
 test('las tres alertas muestran mensajes y valores calculados por backend', () => {
   const html = render();
-  for (const type of ['stock', 'entrega', 'importe']) assert.ok(data.alertas.some((a) => a.tipo === type));
+  for (const type of ['stock', 'demora', 'importe']) assert.ok(data.alertas.some((a) => a.tipo === type));
   for (const a of data.alertas) assert.ok(html.includes(a.mensaje));
   assert.match(html, /10.000,00/);
-  assert.match(html, /30 minutos/);
-  assert.match(html, /58 minutos/);
+  assert.match(html, /30 min/);
+  assert.match(html, /58 min/);
   assert.match(html, /Ver pedido/);
 });
 

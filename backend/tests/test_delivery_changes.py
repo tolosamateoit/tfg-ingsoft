@@ -2,12 +2,14 @@
 from unittest.mock import patch
 import unittest
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from sqlalchemy.orm import Session
 from app.api.couriers import router as courier_router
 from app.api.preparation import router as preparation_router
 from app.api.logistics import router as logistics_router
 from app.api.staff import router as staff_router
-from app.db.models import DiaOperativo, Entrega, HistorialPedido, Pedido, Repartidor, Restaurante
+from app.api.menu import router as menu_router
+from app.db.models import DiaOperativo, Entrega, HistorialPedido, Insumo, Pedido, Repartidor, Restaurante
 from app.orders.operational_date import OPERATIONAL_ZONE
 from tests.auth_support import HEADERS
 import tests.test_orders as order_tests
@@ -20,9 +22,10 @@ class DeliveryChangesTests(unittest.TestCase):
 
     def configure_client(self):
         order_tests.OrderReadTests.configure_client(self)
-        for router in (courier_router, preparation_router, logistics_router, staff_router):
+        for router in (courier_router, preparation_router, logistics_router, staff_router, menu_router):
             self.app.include_router(router, prefix='/api')
-        for target in ('app.api.couriers.lock_order_relations', 'app.preparation.service.lock_order_relations', 'app.api.staff.lock_email'):
+        for target in ('app.api.couriers.lock_order_relations', 'app.preparation.service.lock_order_relations',
+                       'app.api.staff.lock_email', 'app.menu.inventory.lock_recipe_relations'):
             context = patch(target)
             context.start()
             self.addCleanup(context.stop)
@@ -36,7 +39,8 @@ class DeliveryChangesTests(unittest.TestCase):
         oid = response.json()['id_pedido']
         prep = f'/api/restaurantes/1/pedidos/{oid}/preparacion'
         version = self.client.get(prep).json()['version']
-        self.assertEqual(self.client.put(prep, headers=HEADERS, json={'estado': 'En preparación', 'version': version}).status_code, 409)
+        failed_preparation = self.client.put(prep, headers=HEADERS, json={'estado': 'En preparación', 'version': version})
+        self.assertEqual(failed_preparation.status_code, 409, failed_preparation.text)
         self.assertEqual(self.post_order({**ORDER, 'distancia_km': '10.001'}).status_code, 422)
         with Session(self.engine) as db:
             db.get(Restaurante, 1).abierto = False
@@ -44,6 +48,32 @@ class DeliveryChangesTests(unittest.TestCase):
             db.commit()
         self.assertEqual(self.client.put(prep, headers=HEADERS, json={'estado': 'En preparación', 'version': version}).status_code, 409)
         self.assertEqual(self.post_order().status_code, 409)
+
+    def test_customer_can_order_without_stock_and_owner_can_confirm_after_restock(self):
+        with Session(self.engine) as db:
+            db.get(Insumo, 1).stock_actual = Decimal('0.1')
+            db.commit()
+        payload = {**ORDER, 'detalles': [{'id_producto': 1, 'cantidad': 3}]}
+        payload.pop('correo_cliente')
+        response = self.post_order(payload, user=3)
+        self.assertEqual(response.status_code, 201, response.text)
+        order_id = response.json()['id_pedido']
+        self.sign_in(7)
+        detail = self.client.get(f'/api/restaurantes/1/pedidos/{order_id}/preparacion').json()
+        path = f'/api/restaurantes/1/pedidos/{order_id}/preparacion'
+        failed = self.client.put(path, headers=HEADERS, json={'estado': 'En preparación', 'version': detail['version']})
+        self.assertEqual(failed.status_code, 409, failed.text)
+        self.assertIn('stock suficiente', failed.json()['detail'])
+        self.assertEqual(self.client.get(f'/api/pedidos/{order_id}').json()['estado'], 'Nuevo')
+        replenished = self.client.post('/api/restaurantes/1/insumos/1/movimientos', headers=HEADERS,
+            json={'tipo': 'reposicion', 'cantidad': '0.2', 'motivo': 'Reposición para pedido de prueba'})
+        self.assertEqual(replenished.status_code, 201, replenished.text)
+        detail = self.client.get(path).json()
+        confirmed = self.client.put(path, headers=HEADERS,
+            json={'estado': 'En preparación', 'version': detail['version']})
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        with Session(self.engine) as db:
+            self.assertEqual(db.get(Insumo, 1).stock_actual, Decimal('0.0'))
 
     def test_owner_status_and_staff_are_restaurant_scoped(self):
         self.sign_in(7)

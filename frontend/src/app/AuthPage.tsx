@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, startQuerySession, clearQuerySession } from '../services/queryCache';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { AuthError, getSession, localAccountLogin, login, logout, type User } from '../services/auth';
+import { AuthError, changePassword, getSession, localAccountLogin, login, logout, type User } from '../services/auth';
 import MenuManager from './MenuManager';
 import Inventory from './Inventory';
 import Orders from './Orders';
@@ -21,6 +21,9 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
   const [error, setError] = useState('');
   const [path, setPath] = useState(window.location.hash.replace(/^#\//, ''));
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -64,9 +67,21 @@ export default function AuthPage() {
   }
   async function signOut() {
     setBusy(true); setError('');
-    try { await logout(); clearQuerySession(); setUser(null); setMobileMenu(false); }
+    try { await logout(); clearQuerySession(); setUser(null); setMobileMenu(false); setChangingPassword(false); }
     catch { setError('No se pudo cerrar la sesión. Volvé a intentar.'); }
     finally { setBusy(false); }
+  }
+  async function replacePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError('');
+    if (newPassword !== confirmation) { setError('Las contraseñas nuevas no coinciden.'); return; }
+    setBusy(true);
+    try {
+      await changePassword(password, newPassword);
+      clearQuerySession(); setUser(null); setChangingPassword(false); setError('Contraseña actualizada. Iniciá sesión nuevamente.');
+    } catch (failure) {
+      if (failure instanceof AuthError && failure.status === 401) { clearQuerySession(); setUser(null); setChangingPassword(false); }
+      setError(failure instanceof Error ? failure.message : 'No se pudo cambiar la contraseña.');
+    } finally { setPassword(''); setNewPassword(''); setConfirmation(''); setBusy(false); }
   }
   const brand = <><span className="brand-mark"><Icon name="leaf" size={24}/></span><span>oliva<span className="brand-dot">.</span></span></>;
   if (checking) return <div className="session-loading"><div className="app-brand">{brand}</div><span className="loading-ring"/><p>Preparando tu espacio…</p></div>;
@@ -83,9 +98,22 @@ export default function AuthPage() {
       </form>{error && <p className="auth-error" role="alert">{error}</p>}
       {import.meta.env.DEV && __LOCAL_ACCOUNT_ACCESS__ && <div className="quick-access"><div className="divider-label"><span>Acceso rápido</span></div><div className="quick-access-grid">
         {[['propietario','Propietario','grid'],['personal','Personal','food'],['repartidor','Repartidor 1','truck'],['repartidor_2','Repartidor 2','truck'],['repartidor_3','Repartidor 3','truck'],['cliente','Cliente','people']].map(([role,label,icon]) => <button key={role} disabled={busy} onClick={() => void quickAccess(role)}><Icon name={icon} size={22}/><span>{label}</span></button>)}
-      </div></div>}<p className="login-security"><Icon name="check" size={16}/>Acceso protegido para tu equipo</p>
+      </div></div>}
+      <p className="login-security"><Icon name="check" size={16}/>Acceso protegido para tu equipo</p>
     </div><footer>Todo listo para un buen servicio.</footer></main>
   </div>;
+  if (user.cambio_contrasena_obligatorio || changingPassword) return <main className="login-page"><div className="login-main"><div className="login-panel">
+    <div className="app-brand">{brand}</div><h1>Cambiá tu contraseña</h1>
+    <p>{user.cambio_contrasena_obligatorio ? 'Por seguridad, cambiá la contraseña temporal antes de continuar.' : 'Ingresá tu contraseña actual y elegí una nueva.'}</p>
+    <form className="login-form" onSubmit={(event) => void replacePassword(event)}>
+      <label htmlFor="current-password">{user.cambio_contrasena_obligatorio ? 'Contraseña temporal' : 'Contraseña actual'}</label><input id="current-password" type="password" required maxLength={128} autoComplete="current-password" disabled={busy} value={password} onChange={event => setPassword(event.target.value)}/>
+      <label htmlFor="new-password">Nueva contraseña (15 a 20 caracteres)</label><input id="new-password" type="password" required minLength={15} maxLength={20} autoComplete="new-password" disabled={busy} value={newPassword} onChange={event => setNewPassword(event.target.value)}/>
+      <label htmlFor="confirm-password">Repetí la nueva contraseña</label><input id="confirm-password" type="password" required minLength={15} maxLength={20} autoComplete="new-password" disabled={busy} value={confirmation} onChange={event => setConfirmation(event.target.value)}/>
+      <button className="primary-button" disabled={busy}>Guardar contraseña</button>
+      {user.cambio_contrasena_obligatorio ? <button type="button" disabled={busy} onClick={() => void signOut()}>Cerrar sesión</button> :
+        <button type="button" disabled={busy} onClick={() => { setChangingPassword(false); setPassword(''); setNewPassword(''); setConfirmation(''); setError(''); }}>Volver</button>}
+    </form>{error && <p role="alert" className="auth-error">{error}</p>}
+  </div></div></main>;
   const initials = user.nombre.split(' ').filter(Boolean).slice(0,2).map((word) => word[0]).join('').toUpperCase();
   return <QueryClientProvider client={queryClient}><div className={`app-shell${user.rol === 'cliente' ? ' app-shell--customer' : ''}`}>
     {mobileMenu && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)}/>}
@@ -95,7 +123,7 @@ export default function AuthPage() {
       <nav aria-label="Navegación principal">{pages.map((page, index) => <div key={page.path}>{(index === 0 || pages[index-1].group !== page.group) && <p className="nav-group">{page.group}</p>}
         <a href={`#/${page.path}`} className={`nav-link${current.path === page.path ? ' nav-link--active' : ''}`} aria-current={current.path === page.path ? 'page' : undefined}><Icon name={page.icon}/>{page.label}{current.path === page.path && <span className="nav-active-dot"/>}</a>
       </div>)}</nav>
-      <div className="sidebar-bottom"><span className="sidebar-tagline"><Icon name="leaf" size={17}/>Un servicio a la vez.</span><div className="sidebar-user"><span className="avatar">{initials}</span><div><strong>{user.nombre}</strong><small>{roleLabels[user.rol]}</small></div><button className="icon-button" aria-label="Cerrar sesión" disabled={busy} onClick={() => void signOut()}><Icon name="logout"/></button></div></div>
+      <div className="sidebar-bottom"><span className="sidebar-tagline"><Icon name="leaf" size={17}/>Un servicio a la vez.</span><button type="button" disabled={busy} onClick={() => { setError(''); setChangingPassword(true); }}>Cambiar contraseña</button><div className="sidebar-user"><span className="avatar">{initials}</span><div><strong>{user.nombre}</strong><small>{roleLabels[user.rol]}</small></div><button className="icon-button" aria-label="Cerrar sesión" disabled={busy} onClick={() => void signOut()}><Icon name="logout"/></button></div></div>
     </aside>
     <div className="workspace"><header className="workspace-header"><div className="header-breadcrumb"><button className="icon-button mobile-menu" aria-label="Abrir navegación" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}><Icon name="menu"/></button><span>Mi espacio</span><span className="breadcrumb-slash">/</span><strong>{current.label}</strong></div>
       <div className="header-actions"><span className="header-date">{new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</span>{staff && <a href="#/nuevo-pedido" className="primary-button"><Icon name="plus" size={18}/>Nuevo pedido</a>}<span className="avatar avatar--small" title={user.nombre}>{initials}</span></div></header>

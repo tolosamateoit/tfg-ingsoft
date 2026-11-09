@@ -62,23 +62,19 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(PrediccionDemanda)), 1)
             self.assertEqual(db.scalar(select(func.count()).select_from(Alerta)), 4)
 
-    def test_staff_only_receives_operational_data_and_restaurant_scope(self):
+    def test_dashboard_is_restricted_to_the_restaurant_owner(self):
         with Session(self.engine) as db:
             db.add_all([Alerta(id_restaurante=1, tipo="importe", descripcion="Importe privado", valor_observado=100, valor_referencia=50, estado="Activa"),
                         Alerta(id_restaurante=1, tipo="stock", descripcion="Stock operativo", valor_observado=-1, valor_referencia=0, estado="Activa")])
             db.commit()
         self.sign_in(1)
         response = self.dashboard()
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertIsNone(response.json()["indicadores"])
-        self.assertIsNone(response.json()["prediccion_guardada"])
-        self.assertEqual(response.json()["alertas_activas"], [])
+        self.assertEqual(response.status_code, 403, response.text)
         self.assertNotIn("Importe privado", response.text)
         self.assertEqual(self.dashboard("/api/restaurantes/2").status_code, 403)
         self.sign_in(2)
         other = self.dashboard("/api/restaurantes/2")
-        self.assertEqual(other.status_code, 200, other.text)
-        self.assertEqual({row["id_pedido"] for row in other.json()["prioridades"]["pedidos"]}, {2, 3})
+        self.assertEqual(other.status_code, 403, other.text)
 
     def test_empty_restaurant_has_explicit_absence_instead_of_invented_results(self):
         with Session(self.engine) as db:

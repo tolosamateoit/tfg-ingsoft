@@ -193,7 +193,7 @@ class PriorityOperationTests(unittest.TestCase):
         for path in ('/tarifas',):
             self.assertEqual(self.client.get(BASE + path).status_code, 403, path)
         for path in ('/predicciones/diaria', '/indicadores', '/alertas'):
-            self.assertEqual(self.client.get(BASE + path).status_code, 200, path)
+            self.assertEqual(self.client.get(BASE + path).status_code, 403, path)
         self.assertEqual(self.client.post(BASE + '/repartidores', headers=HEADERS, json={}).status_code, 403)
         self.assertEqual(self.client.put(BASE + '/tarifas', headers=HEADERS, json={'costo_fijo_entrega':1,'costo_por_km':2}).status_code, 403)
         self.assertEqual(self.client.get('/api/restaurantes/2/prioridades').status_code, 403)

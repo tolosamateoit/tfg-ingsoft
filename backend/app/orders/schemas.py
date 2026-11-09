@@ -43,7 +43,6 @@ class MenuItemOutput(BaseModel):
     precio: Decimal
     descripcion: str | None = None
     imagen_url: str | None = None
-    disponible_stock: bool = False
 
     @field_serializer("precio")
     def money_as_text(self, value: Decimal) -> str:

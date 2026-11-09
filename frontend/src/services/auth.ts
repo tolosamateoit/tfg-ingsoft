@@ -6,6 +6,7 @@ export type User = {
   rol: string;
   id_restaurante: number | null;
   restaurante?: string | null;
+  cambio_contrasena_obligatorio: boolean;
 };
 
 export class AuthError extends Error {
@@ -22,7 +23,10 @@ async function request(path: string, body?: object, signal?: AbortSignal) {
     cache: 'no-store',
   });
   if (!response.ok) {
-    const message = response.status === 401
+    const details: unknown = path === 'cambiar-contrasena' && response.status === 422 ? await response.json().catch(() => null) : null;
+    const explanation = details && typeof details === 'object' && 'detail' in details && typeof details.detail === 'string'
+      ? details.detail : null;
+    const message = explanation ?? (response.status === 401
       ? 'No se pudo iniciar sesión. Verificá los datos o intentá nuevamente en 15 minutos.'
       : response.status === 403
         ? 'No se pudo validar el origen de la solicitud. Volvé a abrir la aplicación desde la dirección local indicada.'
@@ -30,7 +34,7 @@ async function request(path: string, body?: object, signal?: AbortSignal) {
         ? 'El servicio de inicio de sesión no está disponible. Volvé a intentar.'
       : response.status === 422
         ? 'Comprobá el correo y la contraseña ingresados.'
-        : 'No se pudo completar la solicitud. Volvé a intentar.';
+        : 'No se pudo completar la solicitud. Volvé a intentar.');
     throw new AuthError(response.status, message);
   }
   return response.status === 204 ? undefined : response.json();
@@ -46,6 +50,10 @@ export async function getSession(signal?: AbortSignal): Promise<User | null> {
 
 export async function login(correo: string, contrasena: string): Promise<User> {
   return await request('login', { correo, contrasena }) as User;
+}
+
+export async function changePassword(actual: string, nueva: string): Promise<void> {
+  await request('cambiar-contrasena', { actual, nueva });
 }
 
 export async function localAccountLogin(role: string): Promise<User> {

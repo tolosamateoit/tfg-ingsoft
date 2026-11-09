@@ -69,9 +69,11 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/api/pedidos/{id}").status_code, 404)
 
     def test_product_presentation_persists_and_is_visible_without_internal_costs(self):
-        self.sign_in(1)
         product = {"nombre": "Pizza Margarita", "precio": "9500", "costo_unitario": "3200", "activo": True,
                    "descripcion": "Mozzarella, tomate y albahaca.", "imagen_url": "/images/pizza.jpg"}
+        self.sign_in(1)
+        self.assertEqual(self.put(BASE + "/productos/1", product).status_code, 403)
+        self.sign_in(7)
         response = self.put(BASE + "/productos/1", product)
         self.assertEqual(response.status_code, 200, response.text)
         for url in ("javascript:alert(1)", "data:image/svg+xml,test", "//example.invalid/pizza.jpg", "/images/../secret", "https://user:password@example.invalid/x"):

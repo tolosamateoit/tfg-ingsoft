@@ -48,7 +48,7 @@ test('Pedidos es la entrada por defecto y las rutas viejas redirigen sin aparece
     const paths=pagesFor({rol,id_restaurante:2}).map(p=>p.path);
     assert.equal(paths[0],'pedidos');
     assert.ok(!paths.includes('resumen')&&!paths.includes('prioridades'));
-    assert.ok(paths.includes('indicadores'));
+    assert.equal(paths.includes('indicadores'), rol === 'propietario');
   }
   assert.equal(canonicalPath('resumen'),'pedidos');
   assert.equal(canonicalPath('prioridades'),'pedidos');
@@ -97,4 +97,18 @@ test('historial conserva tabla, detalle y orden del backend sin rankings',()=>{
   assert.doesNotMatch(html,/Prioridad|Confirmar pedido|Marcar como listo/);
   const rows=data.history.pedidos;
   for(let i=1;i<rows.length;i++) assert.ok(html.indexOf(`#${rows[i-1].id_pedido}<`) < html.indexOf(`#${rows[i].id_pedido}<`));
+});
+
+test('la alerta de importe inusual aparece en Pedidos y en el historial cuando el backend la marca',()=>{
+  const warning='Importe histórico P95 superado';
+  const daily=renderToStaticMarkup(React.createElement(DailyOrderCard,{row:{...data.day.activos[0],advertencia_importe:warning},
+    couriers:data.day.repartidores,busy:false,...actions}));
+  assert.match(daily,/Importe inusual/);
+  assert.match(daily,/Alerta: pedido con importe inusualmente elevado/);
+  const page={...data.history,pedidos:data.history.pedidos.map((row,index)=>index===0?{...row,advertencia_importe:warning}:row)};
+  const history=renderToStaticMarkup(React.createElement(OrderTable,{page,restaurant:1,onOpen:no}));
+  assert.match(history,/Importe inusual/);
+  assert.match(history,/Alerta: pedido con importe inusualmente elevado/);
+  const unflagged=renderToStaticMarkup(React.createElement(OrderTable,{page:data.history,restaurant:1,onOpen:no}));
+  assert.doesNotMatch(unflagged,/Importe inusual/);
 });

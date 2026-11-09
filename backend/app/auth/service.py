@@ -3,7 +3,7 @@
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.auth.models import EstadoAcceso, Sesion
@@ -61,6 +61,8 @@ def login(db: Session, email: str, password: str) -> tuple[Usuario, str] | None:
         state.intentos_fallidos += 1
         if state.intentos_fallidos == 5:
             state.bloqueado_hasta = now + LOCK_TIME
+            if user is not None:
+                db.execute(delete(Sesion).where(Sesion.id_usuario == user.id_usuario))
         db.commit()
         return None
     state.intentos_fallidos = 0

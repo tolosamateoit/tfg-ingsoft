@@ -12,7 +12,7 @@ from app.auth.dependencies import DB, require_restaurant
 from app.db.models import Usuario
 
 router = APIRouter(prefix="/restaurantes/{id_restaurante}", tags=["Predicción e indicadores"])
-Owner = Annotated[Usuario, Depends(require_restaurant("personal", "propietario"))]
+Owner = Annotated[Usuario, Depends(require_restaurant("propietario"))]
 PositiveId = Annotated[int, Path(gt=0)]
 
 

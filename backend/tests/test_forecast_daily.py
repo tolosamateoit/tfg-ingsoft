@@ -127,7 +127,7 @@ class DayForecastTests(unittest.TestCase):
         self.assertEqual(self.daily().json()['productos'][0]['cantidad'], 28)
         self.assertEqual(self.client.get('/api/restaurantes/2/predicciones/diaria').status_code, 403)
         self.sign_in(1)
-        self.assertEqual(self.daily().status_code, 200)
+        self.assertEqual(self.daily().status_code, 403)
 
     def test_last_seven_operating_weekdays_drive_products_orders_and_recipes(self):
         target = date(2026, 11, 9)  # lunes

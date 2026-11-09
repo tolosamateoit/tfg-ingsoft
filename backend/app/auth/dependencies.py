@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.config import AuthSettings, get_auth_settings
 from app.auth.database import get_db
-from app.auth.models import Sesion
+from app.auth.models import CambioClavePendiente, Sesion
 from app.auth.security import digest
 from app.auth.service import as_utc, utc_now, valid_user
 from app.db.models import Cliente, Entrega, Pedido, Repartidor, Usuario
@@ -57,11 +57,14 @@ def current_identity(request: Request, db: DB,
     if not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
         raise HTTPException(401, "Necesitás iniciar sesión.")
     row = db.execute(
-        select(Sesion, Usuario).join(Usuario, Usuario.id_usuario == Sesion.id_usuario)
+        select(Sesion, Usuario, CambioClavePendiente.id_usuario).join(Usuario, Usuario.id_usuario == Sesion.id_usuario)
+        .outerjoin(CambioClavePendiente, CambioClavePendiente.id_usuario == Usuario.id_usuario)
         .where(Sesion.token_hash == digest(token))
     ).first()
     if not row or as_utc(row[0].expira_en) <= utc_now() or not valid_user(row[1]):
         raise HTTPException(401, "Necesitás iniciar sesión.")
+    if row[2] is not None and request.url.path not in {'/api/auth/me', '/api/auth/logout', '/api/auth/cambiar-contrasena'}:
+        raise HTTPException(403, 'Debés cambiar tu contraseña antes de continuar.')
     return Identity(row[1], row[0])
 
 

@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { operationRequest } from '../services/operations';
 import { OrderError } from '../services/orders';
 import { roleLabels } from './navigation';
+import AccountRecovery from './AccountRecovery';
 
 type Diagnostic = {
   id_usuario: number; correo: string; rol: string; activo: boolean; id_restaurante: number | null;
@@ -25,7 +26,7 @@ export default function AccountSupport({ onSessionExpired }: { onSessionExpired:
   }
   return <section className="menu-manager" aria-label="Administración y soporte de cuentas">
     <h2>Diagnóstico de cuentas</h2>
-    <p>Diagnóstico de una cuenta por correo exacto. Esta consulta es de solo lectura y no otorga acceso a los datos operativos del restaurante.</p>
+    <p>Consultá el estado de una cuenta por correo exacto o restablecé su acceso ante un compromiso.</p>
     <form className="menu-form" onSubmit={(event) => void submit(event)}>
       <label htmlFor="support-email">Correo de la cuenta a diagnosticar</label>
       <input id="support-email" type="email" required maxLength={254} autoComplete="off" value={email} disabled={busy} onChange={(event) => setEmail(event.target.value)} />
@@ -41,6 +42,7 @@ export default function AccountSupport({ onSessionExpired }: { onSessionExpired:
         <dt>Bloqueo temporal</dt><dd>{data.bloqueo_temporal && data.bloqueado_hasta ? `Bloqueada hasta ${formatDateTime(data.bloqueado_hasta)}` : 'Sin bloqueo vigente'}</dd>
         <dt>Condiciones de acceso</dt><dd>{data.acceso_habilitado ? 'Habilitadas; se requiere una contraseña válida' : 'La cuenta no cumple las condiciones para iniciar sesión'}</dd>
       </dl>
+      {data.activo && <AccountRecovery key={data.id_usuario} path={`admin/cuentas/${data.id_usuario}/compromiso`}/>}
     </article>}
   </section>;
 }

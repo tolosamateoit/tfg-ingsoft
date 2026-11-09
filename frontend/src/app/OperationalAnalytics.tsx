@@ -22,7 +22,8 @@ export function OperationalDetails({ data, onDate, onOpen }: { data: Operational
         <article><span>Pedidos del día</span><strong>{data.pedidos}</strong><small>Todos los estados</small></article>
         <article className="operational-sales"><span>Ventas del día</span><strong>{formatMoney(data.ventas)}</strong><small>{data.pedidos_entregados} pedidos entregados</small></article>
         <article><span>Ticket promedio</span><strong>{data.ticket_promedio === null ? 'Sin ventas' : formatMoney(data.ticket_promedio)}</strong><small>Por pedido entregado</small></article>
-        <article><span>Tiempo de entrega</span><strong>{minutes(data.entrega_minutos)}</strong><small>{data.entregas_con_tiempo} entregas con tiempo registrado</small></article>
+        <article><span>Tiempos promedio</span><div className="operational-state-times">{data.tiempos_promedio.map((row) =>
+          <div key={row.estado}><span>{row.estado}</span><strong>{minutes(row.minutos)}</strong></div>)}</div></article>
       </div>
       <div className="operational-delivery-note"><span><strong>{data.entregas_habituales}</strong> dentro de lo habitual</span>
         <span className={data.entregas_demoradas ? 'operational-delayed' : ''}><strong>{data.entregas_demoradas}</strong> más lentas de lo habitual</span>
@@ -30,7 +31,7 @@ export function OperationalDetails({ data, onDate, onOpen }: { data: Operational
         <small>Según entregas anteriores del mismo repartidor; no es un plazo prometido.</small>
       </div>
       <div className="operational-grid">
-        <section className="operational-panel"><h3>Ventas de los últimos 7 días ($)</h3>
+        <section className="operational-panel"><h3>Ventas de los últimos 7 días operativos ($)</h3>
           <div className="operational-chart" aria-label="Ventas entregadas por día">{data.evolucion.map((day) =>
             <div className="operational-day" key={day.fecha} title={`${formatCalendarDate(day.fecha)}: ${formatMoney(day.ventas)}`}><span className="operational-chart-value">{chartAmount(day.ventas)}</span>
               <div className="operational-bar-track"><div className="operational-bar" style={{ height: `${day.proporcion}%` }}/></div>
@@ -46,10 +47,12 @@ export function OperationalDetails({ data, onDate, onOpen }: { data: Operational
         {data.aviso_stock && <p className="operational-stock-note">{data.aviso_stock}</p>}
         {!data.alertas.length ? <p className="operational-positive">¡Todo en orden! No detectamos alertas con los datos disponibles.</p> :
           <ul>{data.alertas.map((alert) => <li key={alert.clave} className={`operational-alert operational-alert--${alert.tipo}`}>
-            <span className="operational-alert-icon" aria-hidden="true">⚠</span><div><strong>{alert.tipo === 'stock' ? 'Revisá las compras' : alert.tipo === 'entrega' ? 'Una entrega tardó más' : alert.tipo === 'demanda' ? 'Menos pedidos de lo habitual' : 'Un pedido de importe alto'}</strong>
-              <p>{alert.mensaje}</p>{alert.id_pedido !== null && <button className="operational-open" onClick={() => onOpen?.(alert.id_pedido!)}>Ver pedido #{alert.id_pedido} →</button>}</div></li>)}</ul>}
+            <span className="operational-alert-icon" aria-hidden="true">⚠</span><div><strong>{alert.tipo === 'stock' ? 'Revisá las compras' : alert.tipo === 'demora' ? `Pedido #${alert.id_pedido} — Demoras detectadas` : alert.tipo === 'entrega' ? 'Una entrega tardó más' : alert.tipo === 'demanda' ? 'Menos pedidos de lo habitual' : `Pedido #${alert.id_pedido} — Importe inusualmente elevado`}</strong>
+              {alert.tipo !== 'demora' && <p>{alert.mensaje}</p>}
+              {alert.tipo === 'demora' && <ul className="operational-delay-list">{alert.demoras.map(row => <li key={row.estado}>{row.estado}: {minutes(row.minutos)} (habitual: {minutes(row.habitual)}).</li>)}</ul>}
+              {alert.id_pedido !== null && <button className="operational-open" onClick={() => onOpen?.(alert.id_pedido!)}>Ver pedido #{alert.id_pedido} →</button>}</div></li>)}</ul>}
         {data.total_alertas > data.alertas.length && <p className="operational-muted">Mostramos las {data.alertas.length} alertas prioritarias de {data.total_alertas}. Los avisos también aparecen junto a cada pedido y entrega.</p>}
-        <p className="operational-footnote">El stock es el disponible ahora. Las ventas se cuentan por fecha del pedido y los tiempos por fecha de entrega.</p>
+        <p className="operational-footnote">El stock es el disponible ahora. Las ventas y los tiempos por estado corresponden a los pedidos de la fecha seleccionada.</p>
       </section>
     </>}
   </div>;

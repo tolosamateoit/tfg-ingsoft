@@ -85,12 +85,8 @@ def consumption(db: Session, restaurant_id: int, order_id: int, *, exclude_order
         by_id = {ingredient.id_insumo: ingredient for ingredient in ingredients}
         if len(by_id) != len(amounts) or any(recipe.unidad != by_id[recipe.id_insumo].unidad for recipe in recipes):
             raise HTTPException(409, "Revisá la pertenencia y las unidades de los insumos de las recetas.")
-        from app.menu.availability import reserved_ingredients
-        reserved = reserved_ingredients(restaurant_id, exclude_order_id=exclude_order_id)
-        held = dict(db.execute(select(reserved.c.id_insumo, reserved.c.reservado)
-                               .where(reserved.c.id_insumo.in_(amounts))).all())
         for ingredient in ingredients:
-            if ingredient.stock_actual - held.get(ingredient.id_insumo, 0) < amounts[ingredient.id_insumo]:
+            if ingredient.stock_actual < amounts[ingredient.id_insumo]:
                 raise HTTPException(409, 'No hay stock suficiente para preparar el pedido.')
             if amounts[ingredient.id_insumo] > LIMIT or abs(ingredient.stock_actual - amounts[ingredient.id_insumo]) > LIMIT:
                 raise HTTPException(422, "El consumo supera el rango de cantidades permitido.")

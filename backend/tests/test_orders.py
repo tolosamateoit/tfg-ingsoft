@@ -56,7 +56,7 @@ class OrderReadTests(unittest.TestCase):
         first = self.client.get("/api/restaurantes/1/menu")
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual([p["id_producto"] for p in first.json()["productos"]], [1])
-        self.assertEqual(set(first.json()["productos"][0]), {"id_producto", "nombre", "precio", "descripcion", "imagen_url", "disponible_stock"})
+        self.assertEqual(set(first.json()["productos"][0]), {"id_producto", "nombre", "precio", "descripcion", "imagen_url"})
         self.assertEqual(self.client.get("/api/restaurantes/2/menu").json()["productos"], [])
         self.assertEqual(self.client.get("/api/restaurantes/999/menu").status_code, 404)
 

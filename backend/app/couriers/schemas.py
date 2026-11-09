@@ -7,11 +7,17 @@ from app.menu.schemas import InputModel, Money
 
 
 class CourierInput(InputModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=False, hide_input_in_errors=True)
     nombre: str = Field(min_length=1, max_length=150)
     correo: str = Field(min_length=3, max_length=254)
     contrasena: SecretStr = Field(min_length=15, max_length=20)
     telefono: str | None = Field(default=None, max_length=50)
     zona: str | None = Field(default=None, max_length=150)
+
+    @field_validator('nombre', 'correo', 'telefono', 'zona', mode='before')
+    @classmethod
+    def clean_fields(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("correo")
     @classmethod

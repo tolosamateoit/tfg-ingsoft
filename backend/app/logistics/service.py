@@ -47,7 +47,8 @@ def assign_ready_orders(db: Session, user: Usuario, restaurant_id: int, selectio
         calculate(order, now, distance_known=order.id_pedido not in unknown)
     ready.sort(key=lambda order: (-order.puntaje_prioridad, order.fecha_hora, order.id_pedido))
     eligible = [order for order in ready if order.id_pedido not in unknown and order.distancia_km <= 10]
-    candidates = ranked_couriers(db, restaurant_id, courier_id=selection.id_repartidor if selection else None)
+    candidates = ranked_couriers(db, restaurant_id, courier_id=selection.id_repartidor if selection else None,
+                                 user=user if selection is None else None)
     if selection is not None:
         if not ready:
             scoped_order(db, restaurant_id, selection.id_pedido, lock=True)
@@ -189,7 +190,7 @@ def change_distance(db: Session, user: Usuario, restaurant_id: int, order_id: in
     return result
 
 
-def ranked_couriers(db: Session, restaurant_id: int, *, courier_id=None):
+def ranked_couriers(db: Session, restaurant_id: int, *, courier_id=None, user=None):
     query = select(Repartidor, Usuario).join(Usuario, Usuario.id_usuario == Repartidor.id_usuario)
     if courier_id is not None:
         query = query.where(Repartidor.id_repartidor == courier_id)
@@ -201,6 +202,14 @@ def ranked_couriers(db: Session, restaurant_id: int, *, courier_id=None):
                             .order_by(Repartidor.id_repartidor).with_for_update()).all()
     if courier_id is not None:
         return candidates
+    if user is not None:
+        from app.couriers.performance import performance
+        averages = {courier.id_repartidor: performance(db, user, courier.id_repartidor)['promedio_minutos']
+                    for courier, _ in candidates}
+        return sorted(candidates, key=lambda row: (
+            averages[row[0].id_repartidor] is None,
+            averages[row[0].id_repartidor] if averages[row[0].id_repartidor] is not None else 0,
+            row[1].nombre.casefold(), row[1].nombre, row[0].id_repartidor))
     stats = {courier.id_repartidor: [0, 0, 0] for courier, _ in candidates}
     rows = db.execute(select(Entrega.id_repartidor, Entrega.estado, func.count())
                       .join(Pedido, Pedido.id_pedido == Entrega.id_pedido)

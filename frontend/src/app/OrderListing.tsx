@@ -15,7 +15,8 @@ export function OrderTable({page,restaurant,deliveries=false,onOpen}: Pick<Props
         <table className="data-table"><thead><tr><th>Número</th><th>Fecha y hora</th><th>Resumen del pedido</th>
           <th>Importe</th><th>Estado del pedido</th><th>Repartidor</th>{deliveries && <th>Entrega</th>}<th>Detalle</th></tr></thead>
           <tbody>{page.pedidos.map((row) => <tr key={row.id_pedido}>
-            <td>#{row.id_pedido}<WarningBadge message={row.advertencia_importe}/></td><td>{formatDateTime(row.fecha_hora)}</td>
+            <td>#{row.id_pedido}<WarningBadge message={row.advertencia_importe} label="Importe inusual"
+              title="Alerta: pedido con importe inusualmente elevado"/></td><td>{formatDateTime(row.fecha_hora)}</td>
             <td>{row.resumen_productos || 'Sin productos registrados'}{restaurant === null && <p className="muted">{displayText(row.restaurante)}</p>}</td>
             <td>{formatMoney(row.importe_total)}</td><td><Status value={row.estado}/></td>
             <td>{row.repartidor ? displayText(row.repartidor) : 'Sin asignar'}</td>

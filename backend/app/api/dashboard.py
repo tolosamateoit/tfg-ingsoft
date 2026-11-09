@@ -8,7 +8,7 @@ from app.dashboard.service import DashboardOutput, dashboard
 from app.db.models import Usuario
 
 router = APIRouter(tags=["Dashboard"])
-Staff = Annotated[Usuario, Depends(require_restaurant("personal", "propietario"))]
+Staff = Annotated[Usuario, Depends(require_restaurant("propietario"))]
 
 
 @router.post("/restaurantes/{id_restaurante}/dashboard", response_model=DashboardOutput)

@@ -23,10 +23,12 @@ export type OperationalDashboard = {
   fecha_operativa: string | null; fecha: string | null; primera_fecha: string | null;
   pedidos: number; ventas: string; ticket_promedio: string | null; pedidos_entregados: number;
   entrega_minutos: string | null; entregas_con_tiempo: number; entregas_habituales: number;
+  tiempos_promedio: { estado: string; minutos: string | null; pedidos: number }[];
   entregas_demoradas: number; entregas_sin_referencia: number;
   productos: { id_producto: number; nombre: string; cantidad: number }[];
   evolucion: { fecha: string; pedidos: number; ventas: string; proporcion: number }[];
-  alertas: { clave: string; tipo: 'importe' | 'entrega' | 'stock' | 'demanda'; mensaje: string;
+  alertas: { clave: string; tipo: 'importe' | 'entrega' | 'stock' | 'demanda' | 'demora'; mensaje: string;
+    demoras: { estado: string; minutos: string; habitual: string }[];
     id_pedido: number | null; id_entrega: number | null; fecha_pronostico: string | null }[];
   total_alertas: number; fecha_stock: string | null; aviso_stock: string | null;
 };

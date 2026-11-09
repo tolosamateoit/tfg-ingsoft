@@ -62,6 +62,8 @@ class AuthPostgreSQLTests(unittest.TestCase):
             connection.execute(text("DELETE FROM public.auth_estado_acceso"))
 
     def test_parallel_failures_are_not_lost_and_persist_across_sessions(self):
+        with Session(self.engine) as db:
+            _, old_token = login(db, 'auth@test.invalid', PASSWORD)
         def fail(_):
             with Session(self.engine) as db:
                 return login(db, "auth@test.invalid", "incorrecta")
@@ -71,6 +73,7 @@ class AuthPostgreSQLTests(unittest.TestCase):
             state = db.get(EstadoAcceso, digest("auth@test.invalid"))
             self.assertEqual(state.intentos_fallidos, 5)
             self.assertIsNotNone(state.bloqueado_hasta)
+            self.assertIsNone(db.get(Sesion, digest(old_token)))
             self.assertIsNone(login(db, "auth@test.invalid", PASSWORD))
 
     def test_checks_fk_and_rls(self):

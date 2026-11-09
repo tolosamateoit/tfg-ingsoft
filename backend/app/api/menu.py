@@ -29,12 +29,12 @@ def products(id_restaurante: RestaurantId, db: DB, user: MenuUser):
 
 
 @router.post("/productos", response_model=ProductOutput, status_code=201)
-def add_product(id_restaurante: RestaurantId, data: ProductInput, db: DB, user: MenuUser):
+def add_product(id_restaurante: RestaurantId, data: ProductInput, db: DB, user: Owner):
     return create_product(db, id_restaurante, data)
 
 
 @router.put("/productos/{id_producto}", response_model=ProductOutput)
-def edit_product(id_restaurante: RestaurantId, id_producto: ProductId, data: ProductInput, db: DB, user: MenuUser):
+def edit_product(id_restaurante: RestaurantId, id_producto: ProductId, data: ProductInput, db: DB, user: Owner):
     return update_product(db, id_restaurante, id_producto, data, allow_activation=user.rol == "propietario")
 
 

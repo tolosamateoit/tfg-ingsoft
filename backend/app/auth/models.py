@@ -39,3 +39,9 @@ class Sesion(AuthBase):
     )
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expira_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class CambioClavePendiente(AuthBase):
+    __tablename__ = 'auth_cambio_clave_pendiente'
+    id_usuario: Mapped[int] = mapped_column(
+        ForeignKey(Usuario.id_usuario, ondelete='RESTRICT', onupdate='RESTRICT'), primary_key=True)

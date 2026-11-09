@@ -51,7 +51,7 @@ class AuthMigrationTests(unittest.TestCase):
         self.assertTrue(sql.rstrip().endswith("COMMIT;"))
 
     def test_technical_metadata_is_separate_and_fk_resolves(self):
-        self.assertEqual(set(AuthBase.metadata.tables), {"auth_estado_acceso", "auth_sesion"})
+        self.assertEqual(set(AuthBase.metadata.tables), {"auth_estado_acceso", "auth_sesion", "auth_cambio_clave_pendiente"})
         self.assertEqual(len(Base.metadata.tables), 16)
         for table in AuthBase.metadata.sorted_tables:
             self.assertIn("CREATE TABLE", str(CreateTable(table).compile(dialect=dialect())))
