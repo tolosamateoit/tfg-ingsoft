@@ -63,6 +63,9 @@ class OperationalDashboard(BaseModel):
     fecha: date | None = None
     primera_fecha: date | None = None
     pedidos: int = 0
+    pedidos_confirmados: int = 0
+    pedidos_dentro_habitual: int = 0
+    pedidos_con_demora: int = 0
     ventas: Decimal = Decimal(0)
     ticket_promedio: Decimal | None = None
     pedidos_entregados: int = 0
@@ -107,6 +110,12 @@ def quantity_text(value):
 
 
 ORDER_STATES = ('Nuevo', 'En preparación', 'Listo', 'Asignado', 'En camino')
+CONFIRMED_ORDER_STATES = (*ORDER_STATES[1:], 'Entregado', 'No entregado')
+
+
+def order_confirmed(order):
+    """Un pedido confirmado permanece como venta aunque no haya sido entregado."""
+    return getattr(order, 'estado_pago', None) == 'pagado' or order.estado in CONFIRMED_ORDER_STATES
 
 
 def percentile_95(values):
@@ -118,7 +127,7 @@ def percentile_95(values):
 
 
 def amount_p95_for_day(db, restaurant_id, day):
-    """P95 de ventas entregadas en los 30 días operativos anteriores al pedido."""
+    """P95 de importes confirmados en los 30 días operativos anteriores al pedido."""
     first_operating = db.scalar(select(func.min(DiaOperativo.fecha)).where(
         DiaOperativo.id_restaurante == restaurant_id))
     first_order = db.scalar(select(func.min(Pedido.fecha_hora)).where(
@@ -133,7 +142,8 @@ def amount_p95_for_day(db, restaurant_id, day):
     starts = operational_day_bounds(operating[0])[0]
     end = operational_day_bounds(day)[0]
     orders = db.scalars(select(Pedido).where(Pedido.id_restaurante == restaurant_id,
-        Pedido.estado == 'Entregado', Pedido.fecha_hora >= starts, Pedido.fecha_hora < end)).all()
+        or_(Pedido.estado.in_(CONFIRMED_ORDER_STATES), Pedido.estado_pago == 'pagado'),
+        Pedido.fecha_hora >= starts, Pedido.fecha_hora < end)).all()
     allowed = set(operating)
     return percentile_95([order.importe_total for order in orders if local_day(order.fecha_hora) in allowed])
 
@@ -276,7 +286,7 @@ def detect_alerts(orders, samples, *, target_ids=None):
     grouped = defaultdict(list)
     for order in orders:
         grouped[local_day(order.fecha_hora)].append(order)
-        if order.estado == 'Entregado' and order.importe_total > 0:
+        if order_confirmed(order) and order.importe_total > 0:
             delivered[local_day(order.fecha_hora)].append(order.importe_total)
     for day, daily in grouped.items():
         if target_ids is not None:
@@ -349,7 +359,8 @@ def owner_order_warnings(db, user, order_ids, *, reference_day=None, target_orde
             # Solo importes entregados en las ventanas de referencia y pedidos objetivo.
             orders = db.execute(select(Pedido.id_pedido, Pedido.fecha_hora, Pedido.estado, Pedido.importe_total)
                 .where(Pedido.id_restaurante == user.id_restaurante, Pedido.fecha_hora < cutoff,
-                    or_(Pedido.id_pedido.in_(ids), and_(Pedido.estado == 'Entregado', Pedido.importe_total > 0,
+                    or_(Pedido.id_pedido.in_(ids), and_(or_(Pedido.estado.in_(CONFIRMED_ORDER_STATES),
+                        Pedido.estado_pago == 'pagado'), Pedido.importe_total > 0,
                         Pedido.fecha_hora >= operational_day_bounds(first - timedelta(days=90))[0],
                         Pedido.fecha_hora < operational_day_bounds(last)[0])))
                 .order_by(Pedido.fecha_hora, Pedido.id_pedido)).all()
@@ -408,11 +419,15 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
     now = as_utc(db.scalar(select(func.now())))
     spans, current = state_durations(db, daily, now)
     daily_durations, _, state_delays = state_delay_analysis(daily, spans, current, now)
+    delayed_order_ids = {order_id for order_id, delays in state_delays.items() if delays}
     sold = [o for o in daily if o.estado == 'Entregado']
-    sales = sum((o.importe_total for o in sold), Decimal(0))
+    confirmed = [o for o in daily if order_confirmed(o)]
+    sales = sum((o.importe_total for o in confirmed), Decimal(0))
     completed = [r for r in samples if start <= r.ended < end]
     result = OperationalDashboard(fecha_operativa=day, fecha=target, primera_fecha=first, pedidos=len(daily),
-        ventas=sales, ticket_promedio=rounded(sales / len(sold)) if sold else None, pedidos_entregados=len(sold),
+        pedidos_con_demora=len(delayed_order_ids), pedidos_dentro_habitual=len(daily) - len(delayed_order_ids),
+        pedidos_confirmados=len(confirmed), ventas=sales,
+        ticket_promedio=rounded(sales / len(confirmed)) if confirmed else None, pedidos_entregados=len(sold),
         entrega_minutos=rounded(sum((r.duration for r in completed), Decimal(0)) / len(completed)) if completed else None,
         entregas_con_tiempo=len(completed), entregas_habituales=sum(classified.get(r.delivery_id) is False for r in completed),
         entregas_demoradas=sum(classified.get(r.delivery_id) is True for r in completed),
@@ -422,10 +437,10 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
         if daily_durations[state] else None) for state in ORDER_STATES]
     totals = defaultdict(int)
     names = {}
-    if sold:
+    if confirmed:
         details = db.execute(select(DetallePedido.id_producto, Producto.nombre, DetallePedido.cantidad)
             .join(Producto, Producto.id_producto == DetallePedido.id_producto)
-            .where(DetallePedido.id_pedido.in_([o.id_pedido for o in sold]), Producto.id_restaurante == restaurant)).all()
+            .where(DetallePedido.id_pedido.in_([o.id_pedido for o in confirmed]), Producto.id_restaurante == restaurant)).all()
         for pid, name, count in details:
             totals[pid] += count
             names[pid] = name
@@ -436,7 +451,7 @@ def operational_dashboard(db: Session, user: Usuario, restaurant: int, selected:
         bucket = trend.get(local_day(order.fecha_hora))
         if bucket:
             bucket.pedidos += 1
-            if order.estado == 'Entregado':
+            if order_confirmed(order):
                 bucket.ventas += order.importe_total
     maximum = max((r.ventas for r in trend.values()), default=Decimal(0))
     for bucket in trend.values():

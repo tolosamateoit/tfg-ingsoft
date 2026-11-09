@@ -96,6 +96,7 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const [pending, setPending] = useState<Record<number, {state:string; revision:number}>>({});
   const [rejecting, setRejecting] = useState<OperatingOrder | null>(null);
   const locked = useRef(false);
@@ -144,10 +145,25 @@ export default function DailyOrders({restaurant, refresh, onOpen, onSessionExpir
     if (row.distancia_km !== null && Number(row.distancia_km) === Number(value)) return;
     void mutate(row, () => operationRequest(`restaurantes/${restaurant}/pedidos/${row.id_pedido}/distancia`, {distancia_km:value}));
   };
+  async function assignAutomatically() {
+    if (locked.current || !data?.listos.length) return;
+    locked.current = true; setBusy(true); setAssigning(true); setError('');
+    try {
+      await operationRequest(`restaurantes/${restaurant}/entregas/asignar`, undefined, undefined, 'POST');
+      await load();
+    } catch (failure) {
+      failed(failure);
+      try { await load(); } catch { /* Conserva el aviso y la última lectura disponible. */ }
+    } finally {
+      locked.current = false; setBusy(false); setAssigning(false);
+    }
+  }
   return <>
     {error && <p role="alert" className="auth-error">{error} <button disabled={busy} onClick={() => void load().then(() => setError('')).catch(failed)}>Actualizar</button></p>}
-    {busy && <p role="status" className="daily-orders-saving">Guardando y actualizando pedidos…</p>}
-    <button disabled={busy || !data?.listos.length} onClick={() => { setBusy(true); setError(''); void operationRequest(`restaurantes/${restaurant}/entregas/asignar`, undefined, undefined, 'POST').then(load).catch(failed).finally(() => setBusy(false)); }}>Asignar automáticamente</button>
+    {busy && <p role="status" className="daily-orders-saving">{assigning ? 'Asignando repartidores y actualizando pedidos…' : 'Guardando y actualizando pedidos…'}</p>}
+    <button className="daily-orders-assign" aria-busy={assigning} disabled={busy || !data?.listos.length} onClick={() => void assignAutomatically()}>
+      {assigning && <span className="loading-ring daily-orders-assignment-spinner" aria-hidden="true"/>}
+      {assigning ? 'Asignando repartidores…' : 'Asignar automáticamente'}</button>
     <small className="daily-orders-assignment-note">Los pedidos se asignan por orden de prioridad, según el tiempo de entrega promedio de cada repartidor. En caso de empate se desempata alfabéticamente.</small>
     {data ? <DailyOrdersView data={data} busy={busy} pending={pending} onOpen={onOpen} onState={state} onReject={setRejecting}
       onAssign={assign} onDelivery={delivery} onDistance={distance} onPage={setOffset}/> : !error && <p role="status">Cargando los pedidos del día…</p>}

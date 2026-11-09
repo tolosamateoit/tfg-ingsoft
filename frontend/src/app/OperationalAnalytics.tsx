@@ -20,25 +20,24 @@ export function OperationalDetails({ data, onDate, onOpen }: { data: Operational
     {!data.fecha ? <p className="operational-positive">Todavía no hay pedidos registrados para mostrar indicadores.</p> : <>
       <div className="operational-cards">
         <article><span>Pedidos del día</span><strong>{data.pedidos}</strong><small>Todos los estados</small></article>
-        <article className="operational-sales"><span>Ventas del día</span><strong>{formatMoney(data.ventas)}</strong><small>{data.pedidos_entregados} pedidos entregados</small></article>
-        <article><span>Ticket promedio</span><strong>{data.ticket_promedio === null ? 'Sin ventas' : formatMoney(data.ticket_promedio)}</strong><small>Por pedido entregado</small></article>
+        <article className="operational-sales"><span>Ventas del día</span><strong>{formatMoney(data.ventas)}</strong><small>{data.pedidos_confirmados} pedidos confirmados</small></article>
+        <article><span>Ticket promedio</span><strong>{data.ticket_promedio === null ? 'Sin ventas' : formatMoney(data.ticket_promedio)}</strong><small>Por pedido confirmado</small></article>
         <article><span>Tiempos promedio</span><div className="operational-state-times">{data.tiempos_promedio.map((row) =>
           <div key={row.estado}><span>{row.estado}</span><strong>{minutes(row.minutos)}</strong></div>)}</div></article>
       </div>
-      <div className="operational-delivery-note"><span><strong>{data.entregas_habituales}</strong> dentro de lo habitual</span>
-        <span className={data.entregas_demoradas ? 'operational-delayed' : ''}><strong>{data.entregas_demoradas}</strong> más lentas de lo habitual</span>
-        {data.entregas_sin_referencia > 0 && <span>{data.entregas_sin_referencia} sin antecedentes suficientes</span>}
-        <small>Según entregas anteriores del mismo repartidor; no es un plazo prometido.</small>
+      <div className="operational-delivery-note"><span><strong>{data.pedidos_dentro_habitual}</strong> pedidos dentro de lo habitual</span>
+        <span className={data.pedidos_con_demora ? 'operational-delayed' : ''}><strong>{data.pedidos_con_demora}</strong> con demoras</span>
+        <small>Se cuenta cada pedido con al menos una alerta de demora en la fecha consultada.</small>
       </div>
       <div className="operational-grid">
-        <section className="operational-panel"><h3>Ventas de los últimos 7 días operativos ($)</h3>
-          <div className="operational-chart" aria-label="Ventas entregadas por día">{data.evolucion.map((day) =>
+        <section className="operational-panel"><h3>Ventas confirmadas de los últimos 7 días operativos ($)</h3>
+          <div className="operational-chart" aria-label="Importes de pedidos confirmados por día">{data.evolucion.map((day) =>
             <div className="operational-day" key={day.fecha} title={`${formatCalendarDate(day.fecha)}: ${formatMoney(day.ventas)}`}><span className="operational-chart-value">{chartAmount(day.ventas)}</span>
               <div className="operational-bar-track"><div className="operational-bar" style={{ height: `${day.proporcion}%` }}/></div>
               <span>{shortDate(day.fecha)}</span></div>)}</div>
         </section>
         <section className="operational-panel"><h3>Lo más vendido del día</h3>
-          {!data.productos.length ? <p className="operational-muted">Todavía no hay ventas entregadas para este día.</p> :
+          {!data.productos.length ? <p className="operational-muted">Todavía no hay pedidos confirmados para este día.</p> :
             <ol className="operational-top">{data.productos.map((row) => <li key={row.id_producto}><span>{row.nombre}</span><strong>{row.cantidad}<small> un.</small></strong></li>)}</ol>}
         </section>
       </div>

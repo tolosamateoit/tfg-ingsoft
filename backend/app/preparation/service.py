@@ -122,6 +122,8 @@ def change_preparation(db: Session, user: Usuario, restaurant_id: int, order_id:
     ingredients, amounts = consumption(db, restaurant_id, order_id,
         exclude_order_id=order_id if order.estado == 'Nuevo' else None) if data.estado == "En preparación" else ([], {})
     try:
+        if order.estado == "Nuevo" and data.estado == "En preparación":
+            order.estado_pago = "pagado"
         order.estado = data.estado
         event = HistorialPedido(id_pedido=order_id, id_usuario=user.id_usuario, estado=data.estado,
                                 tipo_evento="nueva_preparacion" if data.nueva_preparacion else "preparacion" if ingredients else "estado",

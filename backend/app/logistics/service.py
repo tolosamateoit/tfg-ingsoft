@@ -249,7 +249,17 @@ def change_delivery_state(db: Session, user: Usuario, delivery_id: int, data: De
                               estado=data.estado, detalle=f"Entrega #{delivery_id}: {data.estado}."
                               + (' Pago confirmado.' if data.estado == 'Entregado' else '')))
         db.flush()
-        db.flush()
+        if data.estado in FINISHED:
+            courier = db.scalar(select(Repartidor).where(
+                Repartidor.id_repartidor == delivery.id_repartidor).with_for_update())
+            other_active = db.scalar(select(Entrega.id_entrega).where(
+                Entrega.id_repartidor == delivery.id_repartidor,
+                Entrega.id_entrega != delivery.id_entrega,
+                Entrega.estado.in_(IN_PROGRESS)).limit(1))
+            if courier is not None and other_active is None and courier.estado_disponibilidad != "Disponible":
+                courier.estado_disponibilidad = "Disponible"
+                db.add(HistorialRepartidor(id_repartidor=courier.id_repartidor, estado="Disponible"))
+                db.flush()
         result = _tracking_output(db, user, order, row)
         db.commit()
         return result

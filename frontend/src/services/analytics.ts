@@ -21,7 +21,8 @@ export type DayForecast = {
 export type Alert = { id_alerta: number; tipo: string; descripcion: string; valor_observado: string; valor_referencia: string; fecha_hora: string; estado: string; severidad: 'critica' | 'advertencia' };
 export type OperationalDashboard = {
   fecha_operativa: string | null; fecha: string | null; primera_fecha: string | null;
-  pedidos: number; ventas: string; ticket_promedio: string | null; pedidos_entregados: number;
+  pedidos: number; pedidos_dentro_habitual: number; pedidos_con_demora: number;
+  pedidos_confirmados: number; ventas: string; ticket_promedio: string | null; pedidos_entregados: number;
   entrega_minutos: string | null; entregas_con_tiempo: number; entregas_habituales: number;
   tiempos_promedio: { estado: string; minutos: string | null; pedidos: number }[];
   entregas_demoradas: number; entregas_sin_referencia: number;

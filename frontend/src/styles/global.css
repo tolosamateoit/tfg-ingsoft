@@ -1955,6 +1955,8 @@ strong {
 .daily-orders-completed { margin-top:24px }
 .daily-orders-completed > summary { cursor:pointer; font-size:15px; font-weight:600; color:#607365; padding:14px 0 }
 .daily-orders-completed .daily-order { background:#fafcfb }
+.daily-orders-assign { display:inline-flex; align-items:center; justify-content:center; gap:8px }
+.daily-orders-assignment-spinner { width:15px; height:15px; border-width:2px; flex:none }
 .daily-orders-saving { color:#4a795a; background:#edf5ef; padding:11px 16px; border-radius:8px; font-size:13px }
 @media(max-width:760px) {
  .daily-orders-grid { grid-template-columns:1fr }
