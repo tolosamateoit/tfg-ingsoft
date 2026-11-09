@@ -6,9 +6,14 @@
 5. Para finalizar, haga doble clic en DETENER_PROTOTIPO.bat.
 
 Es necesaria una conexion a Internet. Mantenga todos los archivos del paquete en su lugar.
-Si aparece un error: compruebe que Docker Desktop este iniciado y que ningun otro programa use los puertos 5173 o 8001
-Pruebe ejecutar DETENER_PROTOTIPO.bat como administrador, y luego INICIAR_PROTOTIPO.bat como administrador
-Pruebe desactivar el antivirus
+Si aparece un error: 
+-compruebe que Docker Desktop este iniciado y que ningun otro programa use los puertos 5173 o 8001
+
+
+-Pruebe ejecutar DETENER_PROTOTIPO.bat como administrador, y luego INICIAR_PROTOTIPO.bat como administrador
+
+
+-Pruebe desactivar el antivirus
 
 
 -------------------------
