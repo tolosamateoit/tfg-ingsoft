@@ -11,7 +11,9 @@ export type Forecast = {
 export type DayForecast = {
   estado: string; fecha_operativa: string | null; fecha_seleccionada: string | null;
   fechas_disponibles: { fecha: string; etiqueta: string }[];
-  pedidos_estimados: number | null; cantidad_faltantes: number; compras_completas: boolean;
+  pedidos_estimados: number | null; promedio_pedidos: string | null;
+  historial_pedidos: { fecha: string; pedidos: number }[];
+  cantidad_faltantes: number; compras_completas: boolean;
   productos: { id_producto: number; nombre: string; cantidad: number; estimacion_original: string;
     historial_ventas: { fecha: string; unidades: number }[] }[];
   insumos: Forecast['insumos']; explicaciones: string[]; aviso: string | null;

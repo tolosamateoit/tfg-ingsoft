@@ -1724,6 +1724,19 @@ strong {
 .forecast-summary span { font-size:15px; font-weight:600 }
 .forecast-summary > .forecast-shortage { background:#fff1e5; color:#975222 }
 .forecast-summary > .forecast-covered { background:#e8f3ec; color:#35745a }
+.forecast-summary > .forecast-summary-orders { position:relative; flex-wrap:wrap; row-gap:0; padding-right:52px }
+.forecast-orders-value { display:flex; align-items:center; gap:16px }
+.forecast-orders-history { flex-basis:100%; width:100% }
+.forecast-orders-history summary { position:absolute; top:14px; right:14px; display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:7px; cursor:pointer; list-style:none; color:#527765 }
+.forecast-orders-history summary::-webkit-details-marker { display:none }
+.forecast-orders-history summary span { font-size:20px; color:inherit; line-height:1 }
+.forecast-orders-history[open] summary span { transform:rotate(180deg) }
+.forecast-orders-history summary:hover { background:#dcebf5 }
+.forecast-orders-history > div { border-top:1px solid #cbddea; margin-top:12px; padding-top:10px; font-size:12px; color:#315f87 }
+.forecast-orders-history > div strong { font-size:12px; line-height:1.4 }
+.forecast-orders-history small { display:block; margin-top:3px }
+.forecast-orders-history ul { margin:8px 0; padding-left:17px }
+.forecast-orders-history p { margin:4px 0 }
 .forecast-section { margin-bottom:28px }
 .demand-forecast h3 { font-size:19px; margin:0 0 14px; letter-spacing:-.2px }
 .forecast-products { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,185px),1fr)); gap:12px }

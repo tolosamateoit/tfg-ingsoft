@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.analytics.schemas import DayForecastOutput, ForecastItem, ForecastOutput, IngredientNeed, PreparationProduct
+from app.analytics.schemas import DayForecastOutput, ForecastItem, ForecastOutput, HistoricalOrdersDay, IngredientNeed, PreparationProduct
 from app.auth.service import as_utc
 from app.db.models import DetallePedido, Insumo, Pedido, PrediccionDemanda, Producto, RecetaDetalle
 from app.orders.operational_date import operational_day_bounds, OPERATIONAL_ZONE
@@ -250,8 +250,10 @@ def day_forecast(db: Session, restaurant_id: int, selected: date | None = None, 
         orders[order_day].add(order_id)
         if product_id in names:
             units[product_id, order_day] += quantity
-    result.pedidos_estimados = int((Decimal(sum(len(orders[value]) for value in dates)) / len(dates))
-                                   .to_integral_value(rounding=ROUND_CEILING))
+    result.historial_pedidos = [HistoricalOrdersDay(fecha=value, pedidos=len(orders[value])) for value in dates]
+    average_orders = Decimal(sum(row.pedidos for row in result.historial_pedidos)) / len(dates)
+    result.promedio_pedidos = rounded(average_orders)
+    result.pedidos_estimados = int(average_orders.to_integral_value(rounding=ROUND_CEILING))
     prepared = []
     predictions = []
     generated = as_utc(db.scalar(select(func.now())))

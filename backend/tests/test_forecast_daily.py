@@ -168,6 +168,9 @@ class DayForecastTests(unittest.TestCase):
         self.assertEqual(products[3].estimacion_original, Decimal('0.571429'))
         self.assertEqual(products[3].cantidad, 1)
         self.assertEqual(result.pedidos_estimados, 1)
+        self.assertEqual([row.fecha for row in result.historial_pedidos], [row.fecha for row in pizza.historial_ventas])
+        self.assertEqual([row.pedidos for row in result.historial_pedidos], [1, 1, 1, 1, 0, 1, 1])
+        self.assertEqual(result.promedio_pedidos, Decimal('0.857143'))
         self.assertEqual(result.insumos[0].cantidad_necesaria, Decimal('1.5'))
 
     def test_fewer_than_seven_weekdays_and_no_history(self):
@@ -181,7 +184,11 @@ class DayForecastTests(unittest.TestCase):
             self.assertEqual(result.productos[0].cantidad, 0)
             self.assertEqual([(x.fecha, x.unidades) for x in result.productos[0].historial_ventas], [(first, 0)])
             self.assertEqual(result.pedidos_estimados, 0)
+            self.assertEqual(result.promedio_pedidos, Decimal('0'))
+            self.assertEqual([(x.fecha, x.pedidos) for x in result.historial_pedidos], [(first, 0)])
             db.delete(db.get(DiaOperativo, (1, first))); db.flush()
             absent = day_forecast(db, 1, target, reference_day=target)
             self.assertIsNone(absent.pedidos_estimados)
+            self.assertIsNone(absent.promedio_pedidos)
+            self.assertFalse(absent.historial_pedidos)
             self.assertFalse(absent.productos)

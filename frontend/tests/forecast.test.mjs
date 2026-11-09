@@ -89,5 +89,20 @@ test('cada tarjeta muestra el detalle comprobable del backend en un desplegable 
   assert.doesNotMatch(html, /<details[^>]* open/);
   const changed = render({ ...data, productos: [{...product, historial_ventas: [{fecha:'2026-10-01', unidades: 2}]}] });
   assert.match(changed, /01\/10\/2026: 2 unidades/);
-  assert.doesNotMatch(changed, /21\/09\/2026/);
+  assert.doesNotMatch(changed, /21\/09\/2026: 0 unidades/);
+});
+
+test('los pedidos estimados despliegan las fechas y el promedio devueltos por el backend', () => {
+  const sample = { ...data, pedidos_estimados: 2, promedio_pedidos: '1.333333', historial_pedidos: [
+    {fecha:'2026-09-14', pedidos:2}, {fecha:'2026-09-21', pedidos:0}, {fecha:'2026-09-28', pedidos:2},
+  ] };
+  const html = render(sample);
+  assert.match(html, /<details class="forecast-orders-history">/);
+  assert.match(html, /aria-label="Ver detalle de pedidos estimados"/);
+  assert.match(html, /21\/09\/2026: 0 pedidos/);
+  assert.match(html, /Promedio: 1,333333 pedidos/);
+  assert.match(html, /Redondeado hacia arriba: 2 pedidos/);
+  const next = render({...sample, historial_pedidos:[{fecha:'2026-10-01', pedidos:3}]});
+  assert.match(next, /01\/10\/2026: 3 pedidos/);
+  assert.doesNotMatch(next, /21\/09\/2026: 0 pedidos/);
 });

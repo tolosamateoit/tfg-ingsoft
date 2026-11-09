@@ -68,6 +68,11 @@ class HistoricalSalesDay(BaseModel):
     unidades: int
 
 
+class HistoricalOrdersDay(BaseModel):
+    fecha: date
+    pedidos: int
+
+
 class PreparationProduct(BaseModel):
     id_producto: int
     nombre: str
@@ -82,6 +87,8 @@ class DayForecastOutput(BaseModel):
     fecha_seleccionada: date | None = None
     fechas_disponibles: list[ForecastDateOption] = []
     pedidos_estimados: int | None = None
+    promedio_pedidos: Decimal | None = None
+    historial_pedidos: list[HistoricalOrdersDay] = []
     cantidad_faltantes: int = 0
     compras_completas: bool = True
     productos: list[PreparationProduct] = []

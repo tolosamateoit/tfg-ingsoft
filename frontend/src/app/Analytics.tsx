@@ -35,7 +35,14 @@ export function ForecastDetails({ forecast, onSelect, busy = false, selectedDate
       {forecast.pedidos_estimados !== null && <>
         <p className="forecast-date">Para el {formatCalendarDate(forecast.fecha_seleccionada!)}</p>
         <div className="forecast-summary">
-          <div><strong>{forecast.pedidos_estimados}</strong><span>pedidos estimados</span></div>
+          <div className="forecast-summary-orders"><div className="forecast-orders-value"><strong>{forecast.pedidos_estimados}</strong><span>pedidos estimados</span></div>
+            {forecast.promedio_pedidos !== null && <details key={forecast.fecha_seleccionada} className="forecast-orders-history">
+              <summary aria-label="Ver detalle de pedidos estimados"><span aria-hidden="true">⌄</span></summary>
+              <div><strong>Pedidos entregados</strong><small>{forecast.historial_pedidos.length} de 7 días operativos</small>
+                <ul>{forecast.historial_pedidos.map((day) => <li key={day.fecha}>{formatCalendarDate(day.fecha)}: {day.pedidos} {day.pedidos === 1 ? 'pedido' : 'pedidos'}</li>)}</ul>
+                <p>Promedio: {Number(forecast.promedio_pedidos).toLocaleString('es-AR', {maximumFractionDigits: 6})} pedidos.</p>
+                {Number(forecast.promedio_pedidos) !== forecast.pedidos_estimados && <p>Redondeado hacia arriba: {forecast.pedidos_estimados} pedidos.</p>}
+              </div></details>}</div>
           <div className={forecast.cantidad_faltantes ? 'forecast-shortage' : 'forecast-covered'}>
             <strong>{forecast.cantidad_faltantes}</strong><span>insumos con faltantes</span></div>
         </div>
