@@ -15,9 +15,9 @@ if errorlevel 1 (
 )
 if not exist "backend\.env" goto missing
 if not exist "frontend\.env.development.local" goto missing
-docker image inspect oliva-prototipo-backend:20261109 >nul 2>&1
+docker image inspect oliva-prototipo-backend:20261109-v2 >nul 2>&1
 if errorlevel 1 goto load_images
-docker image inspect oliva-prototipo-frontend:20261109 >nul 2>&1
+docker image inspect oliva-prototipo-frontend:20261109-v2 >nul 2>&1
 if errorlevel 1 goto load_images
 goto start_services
 :load_images
@@ -29,9 +29,9 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-docker image inspect oliva-prototipo-backend:20261109 >nul 2>&1
+docker image inspect oliva-prototipo-backend:20261109-v2 >nul 2>&1
 if errorlevel 1 goto missing_images
-docker image inspect oliva-prototipo-frontend:20261109 >nul 2>&1
+docker image inspect oliva-prototipo-frontend:20261109-v2 >nul 2>&1
 if errorlevel 1 goto missing_images
 :start_services
 echo Iniciando el prototipo...
