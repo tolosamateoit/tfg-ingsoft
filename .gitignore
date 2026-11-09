@@ -14,6 +14,7 @@ __pycache__/
 dist/
 *.tsbuildinfo
 *.log
+/_archivo_excluido/
 
 # Sistema operativo
 .DS_Store

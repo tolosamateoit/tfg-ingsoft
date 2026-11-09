@@ -1,23 +1,9 @@
 # Demo académica · Pedidos y delivery
 
-Proyecto de tesis con React/TypeScript, FastAPI y PostgreSQL en Supabase.
-La etapa 2 está completada: el autor confirmó la aplicación y verificación de
-`0001_der_inicial`. HU-01 incluye login/logout, Argon2id, sesiones, bloqueo y
-autorización. HU-02 agrega gestión de productos y recetas por restaurante.
-**La migración 0002 está aplicada en Supabase mediante Alembic, con autorización.**
-Los permisos de las tablas de la aplicación se restringieron al acceso privado;
-las pruebas de HU-01 contra Supabase usan datos aislados y rollback total.
-No se incorporaron HU-03 en adelante, recuperación por correo ni analítica.
-La publicación web en Render sigue pendiente.
-
-Consultar [HU-02: catálogo, recetas y pruebas](docs/HU02_MENU_RECETAS.md) para
-el recorrido de gestión, el catálogo sintético offline y QA local. HU-02 no
-requiere una migración: usa producto, insumo y receta_detalle del DER existente.
-
-Consultar [HU-01: configuración, pruebas y SQL para revisión](docs/HU01_AUTENTICACION.md)
-para probar el login con PostgreSQL. Incluye las dos variables `AUTH_*`
-adicionales, la preparación offline de cuentas sintéticas y las limitaciones
-pendientes. No sobrescribir el `.env` existente.
+Proyecto académico con React/TypeScript, FastAPI y PostgreSQL. La aplicación
+incluye autenticación, gestión de menú y recetas, pedidos, preparación,
+inventario, logística y analítica. Esta guía cubre instalación, configuración,
+pruebas y compilación local.
 
 ## Requisitos
 
@@ -168,12 +154,7 @@ Estas pruebas verifican configuración, prioridad de variables de entorno,
 validación TLS, cierre de conexiones y errores sin filtraciones. Usan dobles de
 prueba: no demuestran una conexión real a tu proyecto Supabase.
 
-### Etapa 2: modelos y Alembic, aplicada por el autor
-
-El detalle histórico de tablas, relaciones, tipos y restricciones está en
-[docs/BASE_DATOS_ETAPA2.md](docs/BASE_DATOS_ETAPA2.md). Sus notas de aplicación
-pendiente describen el momento en que se preparó la etapa 2; el autor confirmó
-posteriormente que la migración inicial está aplicada y verificada.
+### Modelos y Alembic
 
 Después de actualizar `requirements.txt`, volvé a instalar las dependencias con
 el comando de la sección 1. Las pruebas también validan la estructura de los
@@ -183,8 +164,8 @@ Alembic está configurado en `backend/alembic.ini` y `backend/migrations/`.
 La revisión `0001_der_inicial` incluye las 15 tablas, PK, FK, índices, CHECK,
 triggers confirmados de pertenencia, cardinalidad diferida y RLS sin políticas
 públicas. El SQL completo está en [docs/sql/0001_der_inicial.sql](docs/sql/0001_der_inicial.sql).
-Las revisiones 0001 y 0002 ya están aplicadas. No ejecutar `create_all`,
-downgrade ni nuevas revisiones en Supabase sin revisión y autorización.
+No ejecutar `create_all`, downgrade ni nuevas revisiones en Supabase sin revisión
+y autorización.
 El acceso online de Alembic está bloqueado por defecto y necesita aprobación
 expresa antes de habilitarse. No se ejecuta ninguna migración al iniciar FastAPI.
 
@@ -237,9 +218,8 @@ ocupados, detené el proceso correspondiente antes de iniciar los servidores.
 
 1. Abrí <http://127.0.0.1:5173/api/health> para comprobar FastAPI y el proxy local.
 2. Para verificar PostgreSQL, usá `/api/health/database` en el backend.
-3. El recorrido de login, error, sesión al recargar y logout se describe en
-   [HU01_AUTENTICACION.md](docs/HU01_AUTENTICACION.md), también con una opción
-   de QA sintético sin PostgreSQL.
+3. El backend incluye pruebas automatizadas de login, errores, sesión al recargar
+   y cierre de sesión; se ejecutan con el comando de pruebas de la sección 2.
 4. Revisá la pantalla en escritorio y en una ventana estrecha o emulación móvil.
 
 Para verificar TypeScript y generar la compilación local del frontend:
@@ -262,7 +242,7 @@ frontend/
   src/
     app/          Pantalla y composición de la interfaz
     services/     Comunicación con la API
-    styles/       Tokens de DESIGN.md y estilos compartidos
+    styles/       Tokens y estilos compartidos
 backend/
   app/
     main.py       Aplicación FastAPI
@@ -276,8 +256,7 @@ backend/
   requirements.txt
 ```
 
-Las demás HU se incorporarán cuando se apruebe su etapa. El DER vigente
-está en `docs/der/der.png`; HU-01 no modifica sus tablas ni su imagen.
+El DER vigente está en `docs/der/der.png`.
 La tipografía usa Inter si está disponible y Arial como alternativa, sin descargas
 de fuentes ni dependencias visuales adicionales.
 
