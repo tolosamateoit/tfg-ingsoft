@@ -1,0 +1,25 @@
+services:
+  backend:
+    build: ./backend
+    image: oliva-prototipo-backend:20261109
+    pull_policy: never
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:8001:8001"
+    environment:
+      TZ: America/Argentina/Buenos_Aires
+    volumes:
+      - ./backend/.env:/app/.env:ro
+  frontend:
+    build: ./frontend
+    image: oliva-prototipo-frontend:20261109
+    pull_policy: never
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      API_PROXY_TARGET: http://backend:8001
+    volumes:
+      - ./frontend/.env.development.local:/app/.env.development.local:ro
+    depends_on:
+      - backend

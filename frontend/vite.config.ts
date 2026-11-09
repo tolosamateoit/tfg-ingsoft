@@ -4,7 +4,7 @@ import { localAccess } from './local-access';
 
 // Proxy exclusivo del entorno local: el navegador utiliza un único origen.
 const proxy = {
-  '/api': 'http://127.0.0.1:8001',
+  '/api': process.env.API_PROXY_TARGET || 'http://127.0.0.1:8001',
 };
 
 export default defineConfig(({ command, mode }) => {

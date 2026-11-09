@@ -24,8 +24,8 @@ def build_engine(settings: DatabaseSettings | None = None):
     return create_engine(
         url,
         connect_args={
-            "sslmode": "verify-full",
-            "sslrootcert": settings.sslrootcert,
+            "sslmode": settings.sslmode,
+            "sslrootcert": settings.sslrootcert or "",
             "connect_timeout": settings.connect_timeout,
         },
         **POOL_OPTIONS,

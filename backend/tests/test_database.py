@@ -54,12 +54,18 @@ class ConfigurationTests(unittest.TestCase):
         for overrides in (
             {"PGPORT": "not-a-port"}, {"PGPORT": "0"}, {"PGPORT": "65536"},
             {"PGCONNECT_TIMEOUT": "0"}, {"PGCONNECT_TIMEOUT": "31"},
-            {"PGSSLMODE": "disable"}, {"PGSSLMODE": "require"},
+            {"PGSSLMODE": "disable"}, {"PGSSLMODE": "prefer"},
             {"PGSSLROOTCERT": "missing.crt"},
         ):
             with self.subTest(overrides=overrides), patch.dict(os.environ, overrides):
                 with self.assertRaises(DatabaseConfigurationError):
                     get_database_settings()
+
+    def test_require_uses_tls_without_certificate(self):
+        with patch.dict(os.environ, {"PGSSLMODE": "require", "PGSSLROOTCERT": "missing.crt"}):
+            settings = get_database_settings()
+            self.assertEqual(settings.sslmode, "require")
+            self.assertIsNone(settings.sslrootcert)
 
 
 class ConnectionTests(unittest.TestCase):
@@ -90,13 +96,14 @@ class ConnectionTests(unittest.TestCase):
     @patch("app.db.connection.psycopg.connect")
     @patch("app.db.connection.get_database_settings")
     def test_read_only_select_and_connection_cleanup(self, settings, connect):
-        settings.return_value = MagicMock(connect_timeout=5)
+        settings.return_value = MagicMock(connect_timeout=5, sslmode="require", sslrootcert=None)
         connection = connect.return_value.__enter__.return_value
         cursor = connection.cursor.return_value.__enter__.return_value
         cursor.fetchone.return_value = (1,)
         self.assertTrue(check_database_connection())
         cursor.execute.assert_called_once_with("SELECT 1")
-        self.assertEqual(connect.call_args.kwargs["sslmode"], "verify-full")
+        self.assertEqual(connect.call_args.kwargs["sslmode"], "require")
+        self.assertEqual(connect.call_args.kwargs["sslrootcert"], "")
         self.assertIn("default_transaction_read_only=on", connect.call_args.kwargs["options"])
         self.assertIn("statement_timeout=5000", connect.call_args.kwargs["options"])
         connection.cursor.return_value.__exit__.assert_called_once()

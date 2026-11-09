@@ -17,7 +17,7 @@ def _safe_connection_error(error: psycopg.Error, settings: DatabaseSettings) -> 
     sensitive_values = (
         settings.password, quote(settings.password, safe=""),
         quote_plus(settings.password), settings.host, settings.user,
-        settings.dbname, settings.sslrootcert,
+        settings.dbname, settings.sslrootcert or "",
     )
     for value in sorted(set(sensitive_values), key=len, reverse=True):
         if value:
@@ -40,8 +40,8 @@ def check_database_connection() -> bool:
             dbname=settings.dbname,
             user=settings.user,
             password=settings.password,
-            sslmode="verify-full",
-            sslrootcert=settings.sslrootcert,
+            sslmode=settings.sslmode,
+            sslrootcert=settings.sslrootcert or "",
             connect_timeout=settings.connect_timeout,
             options="-c statement_timeout=5000 -c default_transaction_read_only=on",
         ) as connection:

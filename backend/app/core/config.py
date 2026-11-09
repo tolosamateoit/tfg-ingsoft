@@ -21,15 +21,16 @@ class DatabaseSettings:
     dbname: str
     user: str
     password: str = field(repr=False)
-    sslrootcert: str
+    sslrootcert: str | None
     connect_timeout: int
+    sslmode: str = "verify-full"
 
 
 def get_database_settings() -> DatabaseSettings:
     # El entorno del proceso tiene prioridad. Sin interpolación para no alterar
     # contraseñas que contengan expresiones como ${...}.
     values = {**dotenv_values(ENV_FILE, interpolate=False, encoding="utf-8"), **os.environ}
-    required = ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLROOTCERT")
+    required = ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD")
     if any(not values.get(name) or not values[name].strip() for name in required):
         raise DatabaseConfigurationError("Falta completar la configuración de PostgreSQL.")
 
@@ -41,14 +42,19 @@ def get_database_settings() -> DatabaseSettings:
     if not 1 <= port <= 65535 or not 1 <= timeout <= 30:
         raise DatabaseConfigurationError("Puerto o tiempo de conexión fuera de rango.")
 
-    if values.get("PGSSLMODE", "verify-full") != "verify-full":
-        raise DatabaseConfigurationError("La conexión requiere PGSSLMODE=verify-full.")
+    sslmode = values.get("PGSSLMODE", "verify-full")
+    if sslmode not in {"require", "verify-full"}:
+        raise DatabaseConfigurationError("La conexión requiere PGSSLMODE=require o verify-full.")
 
-    certificate = Path(values["PGSSLROOTCERT"])
-    if not certificate.is_absolute():
-        certificate = BACKEND_DIR / certificate
-    if not certificate.is_file():
-        raise DatabaseConfigurationError("No se encuentra el certificado raíz de PostgreSQL.")
+    certificate = None
+    if sslmode == "verify-full":
+        if not values.get("PGSSLROOTCERT", "").strip():
+            raise DatabaseConfigurationError("Falta configurar el certificado raíz de PostgreSQL.")
+        certificate = Path(values["PGSSLROOTCERT"])
+        if not certificate.is_absolute():
+            certificate = BACKEND_DIR / certificate
+        if not certificate.is_file():
+            raise DatabaseConfigurationError("No se encuentra el certificado raíz de PostgreSQL.")
 
     return DatabaseSettings(
         host=values["PGHOST"].strip(),
@@ -56,6 +62,7 @@ def get_database_settings() -> DatabaseSettings:
         dbname=values["PGDATABASE"].strip(),
         user=values["PGUSER"].strip(),
         password=values["PGPASSWORD"],
-        sslrootcert=str(certificate.resolve()),
+        sslrootcert=str(certificate.resolve()) if certificate else None,
         connect_timeout=timeout,
+        sslmode=sslmode,
     )

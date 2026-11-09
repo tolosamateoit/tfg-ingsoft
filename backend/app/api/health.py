@@ -29,14 +29,14 @@ def database_health() -> HealthResponse:
     except DatabaseConfigurationError:
         raise HTTPException(
             status_code=503,
-            detail="Configuración de PostgreSQL incompleta o inválida. Revisá el .env del backend y el certificado.",
+            detail="Configuración de PostgreSQL incompleta o inválida. Revisá el .env del backend.",
         ) from None
     except psycopg.Error:
         # El módulo de conexión registra el motivo sanitizado solo en la terminal.
         # El diagnóstico público no expone el error técnico ni datos de conexión.
         raise HTTPException(
             status_code=503,
-            detail="No se pudo conectar con PostgreSQL. Revisá configuración, certificado, red y estado del proyecto Supabase.",
+            detail="No se pudo conectar con PostgreSQL. Revisá configuración, red y estado del proyecto Supabase.",
         ) from None
 
     if not available:

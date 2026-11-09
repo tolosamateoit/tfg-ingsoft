@@ -115,6 +115,7 @@ export default function AuthPage() {
     </form>{error && <p role="alert" className="auth-error">{error}</p>}
   </div></div></main>;
   const initials = user.nombre.split(' ').filter(Boolean).slice(0,2).map((word) => word[0]).join('').toUpperCase();
+  const demoAccount = ['@prueba.com', '@prep26.oliva.invalid', '@demo.invalid'].some((domain) => user.correo.toLowerCase().endsWith(domain));
   return <QueryClientProvider client={queryClient}><div className={`app-shell${user.rol === 'cliente' ? ' app-shell--customer' : ''}`}>
     {mobileMenu && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setMobileMenu(false)}/>}
     <aside className={`sidebar${mobileMenu ? ' sidebar--open' : ''}`}><a href={`#/${pages[0].path}`} className="app-brand" aria-label="Oliva, inicio">{brand}</a>
@@ -123,7 +124,7 @@ export default function AuthPage() {
       <nav aria-label="Navegación principal">{pages.map((page, index) => <div key={page.path}>{(index === 0 || pages[index-1].group !== page.group) && <p className="nav-group">{page.group}</p>}
         <a href={`#/${page.path}`} className={`nav-link${current.path === page.path ? ' nav-link--active' : ''}`} aria-current={current.path === page.path ? 'page' : undefined}><Icon name={page.icon}/>{page.label}{current.path === page.path && <span className="nav-active-dot"/>}</a>
       </div>)}</nav>
-      <div className="sidebar-bottom"><span className="sidebar-tagline"><Icon name="leaf" size={17}/>Un servicio a la vez.</span><button type="button" disabled={busy} onClick={() => { setError(''); setChangingPassword(true); }}>Cambiar contraseña</button><div className="sidebar-user"><span className="avatar">{initials}</span><div><strong>{user.nombre}</strong><small>{roleLabels[user.rol]}</small></div><button className="icon-button" aria-label="Cerrar sesión" disabled={busy} onClick={() => void signOut()}><Icon name="logout"/></button></div></div>
+      <div className="sidebar-bottom"><span className="sidebar-tagline"><Icon name="leaf" size={17}/>Un servicio a la vez.</span>{!demoAccount && <button type="button" disabled={busy} onClick={() => { setError(''); setChangingPassword(true); }}>Cambiar contraseña</button>}<div className="sidebar-user"><span className="avatar">{initials}</span><div><strong>{user.nombre}</strong><small>{roleLabels[user.rol]}</small></div><button className="icon-button" aria-label="Cerrar sesión" disabled={busy} onClick={() => void signOut()}><Icon name="logout"/></button></div></div>
     </aside>
     <div className="workspace"><header className="workspace-header"><div className="header-breadcrumb"><button className="icon-button mobile-menu" aria-label="Abrir navegación" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}><Icon name="menu"/></button><span>Mi espacio</span><span className="breadcrumb-slash">/</span><strong>{current.label}</strong></div>
       <div className="header-actions"><span className="header-date">{new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</span>{staff && <a href="#/nuevo-pedido" className="primary-button"><Icon name="plus" size={18}/>Nuevo pedido</a>}<span className="avatar avatar--small" title={user.nombre}>{initials}</span></div></header>

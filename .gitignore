@@ -15,6 +15,7 @@ dist/
 *.tsbuildinfo
 *.log
 /_archivo_excluido/
+/PROTOTIPO_PROFESORA.zip
 
 # Sistema operativo
 .DS_Store
