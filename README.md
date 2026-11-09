@@ -7,6 +7,7 @@
 
 Es necesaria una conexion a Internet. Mantenga todos los archivos del paquete en su lugar.
 Si aparece un error: 
+
 -compruebe que Docker Desktop este iniciado y que ningun otro programa use los puertos 5173 o 8001
 
 
